@@ -8,8 +8,13 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 import logging
 
-from . import TradingAdapter, PriceData, AccountInfo, Position
-from ..config import config
+try:
+    from . import TradingAdapter, PriceData, AccountInfo, Position
+    from ..config import config
+except ImportError:
+    # For direct import
+    from adapters import TradingAdapter, PriceData, AccountInfo, Position
+    from config import config
 
 logger = logging.getLogger(__name__)
 

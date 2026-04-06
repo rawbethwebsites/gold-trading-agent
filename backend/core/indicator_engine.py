@@ -8,7 +8,10 @@ from dataclasses import dataclass
 from typing import List, Optional, Tuple
 from datetime import datetime
 
-from ..adapters import PriceData
+try:
+    from ..adapters import PriceData
+except ImportError:
+    from adapters import PriceData
 
 
 @dataclass

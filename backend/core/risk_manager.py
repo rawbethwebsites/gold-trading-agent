@@ -7,8 +7,12 @@ from dataclasses import dataclass
 from typing import Optional, Tuple
 from datetime import datetime, timedelta
 
-from ..config import config
-from ..adapters import AccountInfo, Position
+try:
+    from ..config import config
+    from ..adapters import AccountInfo, Position
+except ImportError:
+    from config import config
+    from adapters import AccountInfo, Position
 
 
 @dataclass

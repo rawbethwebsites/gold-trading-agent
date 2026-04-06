@@ -4,10 +4,6 @@ Supports: Local MT5 (default), MetaApi (optional), Mock (fallback)
 """
 
 from abc import ABC, abstractmethod
-
-# Export adapters
-from .mt5_adapter import MT5Adapter
-from .mock_adapter import MockAdapter
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
 from datetime import datetime
@@ -126,6 +122,10 @@ class TradingAdapter(DataAdapter):
         """Modify position SL/TP"""
         pass
 
+
+# Import implementations after base classes are defined to avoid circular imports
+from .mt5_adapter import MT5Adapter
+from .mock_adapter import MockAdapter
 
 __all__ = [
     "DataAdapter",

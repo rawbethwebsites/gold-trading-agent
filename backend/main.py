@@ -11,8 +11,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import config
-from adapters.mt5_adapter import MT5Adapter
-from adapters.mock_adapter import MockAdapter
 from services.trading_service import TradingService
 from api import routes
 from api.routes import set_trading_service
@@ -30,11 +28,18 @@ trading_service: TradingService = None
 
 def get_adapter():
     """Factory function to get the appropriate adapter"""
-    if config.is_mock_mode:
+    provider = config.app.data_provider
+    if provider == "mock":
         logger.info("Using Mock Adapter (simulated data)")
+        from adapters.mock_adapter import MockAdapter
         return MockAdapter()
+    elif provider == "twelve_data":
+        logger.info("Using Twelve Data Adapter (real gold prices)")
+        from adapters.twelve_data_adapter import TwelveDataAdapter
+        return TwelveDataAdapter(api_key=config.twelve_data.api_key)
     else:
         logger.info("Using MT5 Adapter (local terminal)")
+        from adapters.mt5_adapter import MT5Adapter
         return MT5Adapter()
 
 

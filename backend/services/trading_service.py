@@ -9,9 +9,14 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass
 
-from ..config import config
-from ..adapters import TradingAdapter, PriceData, AccountInfo, Position
-from ..core import IndicatorEngine, SignalEngine, RiskManager, Signal, IndicatorData
+try:
+    from ..config import config
+    from ..adapters import TradingAdapter, PriceData, AccountInfo, Position
+    from ..core import IndicatorEngine, SignalEngine, RiskManager, Signal, IndicatorData
+except ImportError:
+    from config import config
+    from adapters import TradingAdapter, PriceData, AccountInfo, Position
+    from core import IndicatorEngine, SignalEngine, RiskManager, Signal, IndicatorData
 
 logger = logging.getLogger(__name__)
 

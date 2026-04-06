@@ -7,7 +7,10 @@ from typing import Optional, Dict, Any, List
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 
-from ..services import TradingService
+try:
+    from ..services import TradingService
+except ImportError:
+    from services import TradingService
 
 router = APIRouter()
 

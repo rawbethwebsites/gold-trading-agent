@@ -36,6 +36,13 @@ class AccountConfig:
 
 
 @dataclass
+class TwelveDataConfig:
+    """Twelve Data API settings for real gold prices"""
+    api_key: Optional[str] = None
+    enabled: bool = False
+
+
+@dataclass
 class MetaApiConfig:
     """Optional MetaApi cloud adapter settings"""
     account_id: Optional[str] = None
@@ -47,7 +54,7 @@ class MetaApiConfig:
 @dataclass
 class AppConfig:
     """Application settings"""
-    data_provider: str = "mt5"  # mt5, mock
+    data_provider: str = "mt5"  # mt5, mock, twelve_data
     backend_host: str = "0.0.0.0"
     backend_port: int = 8000
     polling_interval: int = 5
@@ -85,6 +92,11 @@ class Config:
             token=os.getenv("METAAPI_TOKEN"),
             region=os.getenv("METAAPI_REGION", "va"),
             enabled=bool(os.getenv("METAAPI_ACCOUNT_ID") and os.getenv("METAAPI_TOKEN")),
+        )
+
+        self.twelve_data = TwelveDataConfig(
+            api_key=os.getenv("TWELVE_DATA_API_KEY"),
+            enabled=os.getenv("DATA_PROVIDER") == "twelve_data",
         )
 
         self.app = AppConfig(

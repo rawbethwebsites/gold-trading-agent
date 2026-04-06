@@ -9,7 +9,11 @@ import numpy as np
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 
-from . import TradingAdapter, PriceData, AccountInfo, Position
+try:
+    from . import TradingAdapter, PriceData, AccountInfo, Position
+except ImportError:
+    # For direct import
+    from adapters import TradingAdapter, PriceData, AccountInfo, Position
 
 
 class MockAdapter(TradingAdapter):
