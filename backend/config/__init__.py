@@ -7,6 +7,13 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 
 @dataclass
 class TradingConfig:
@@ -38,8 +45,33 @@ class AccountConfig:
 @dataclass
 class TwelveDataConfig:
     """Twelve Data API settings for real gold prices"""
-    api_key: Optional[str] = None
+    api_keys: list = None  # List of API keys for rotation
+    current_key_index: int = 0
     enabled: bool = False
+    api_calls_enabled: bool = True  # Master switch to turn API calls on/off
+
+    def __post_init__(self):
+        if self.api_keys is None:
+            self.api_keys = []
+
+    @property
+    def current_key(self) -> Optional[str]:
+        """Get current API key"""
+        if self.api_keys and 0 <= self.current_key_index < len(self.api_keys):
+            return self.api_keys[self.current_key_index]
+        return None
+
+    def rotate_key(self) -> Optional[str]:
+        """Rotate to next API key"""
+        if not self.api_keys:
+            return None
+        self.current_key_index = (self.current_key_index + 1) % len(self.api_keys)
+        return self.current_key
+
+    @property
+    def has_available_keys(self) -> bool:
+        """Check if there are any API keys available"""
+        return len(self.api_keys) > 0
 
 
 @dataclass
@@ -94,9 +126,14 @@ class Config:
             enabled=bool(os.getenv("METAAPI_ACCOUNT_ID") and os.getenv("METAAPI_TOKEN")),
         )
 
+        # Parse multiple API keys (comma-separated)
+        api_keys_str = os.getenv("TWELVE_DATA_API_KEYS", "")
+        api_keys = [k.strip() for k in api_keys_str.split(",") if k.strip()]
+
         self.twelve_data = TwelveDataConfig(
-            api_key=os.getenv("TWELVE_DATA_API_KEY"),
+            api_keys=api_keys,
             enabled=os.getenv("DATA_PROVIDER") == "twelve_data",
+            api_calls_enabled=self._get_bool("TWELVE_DATA_API_CALLS_ENABLED", True),
         )
 
         self.app = AppConfig(

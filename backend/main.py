@@ -36,7 +36,10 @@ def get_adapter():
     elif provider == "twelve_data":
         logger.info("Using Twelve Data Adapter (real gold prices)")
         from adapters.twelve_data_adapter import TwelveDataAdapter
-        return TwelveDataAdapter(api_key=config.twelve_data.api_key)
+        return TwelveDataAdapter(
+            api_keys=config.twelve_data.api_keys,
+            api_calls_enabled=config.twelve_data.api_calls_enabled
+        )
     else:
         logger.info("Using MT5 Adapter (local terminal)")
         from adapters.mt5_adapter import MT5Adapter
