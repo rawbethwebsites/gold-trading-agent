@@ -1,0 +1,53 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --gold-primary: #FFD700;
+  --gold-dark: #B8860B;
+  --gold-light: #F4E4BC;
+}
+
+body {
+  background-color: #0f172a;
+  color: #f8fafc;
+}
+
+.gold-gradient {
+  background: linear-gradient(135deg, #FFD700 0%, #B8860B 100%);
+}
+
+.gold-text {
+  color: #FFD700;
+}
+
+.bullish {
+  color: #22c55e;
+}
+
+.bearish {
+  color: #ef4444;
+}
+
+.neutral {
+  color: #94a3b8;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1e293b;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #475569;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
