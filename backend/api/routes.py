@@ -90,6 +90,7 @@ class StatusResponse(BaseModel):
     symbol: str
     can_trade: bool
     error: Optional[str]
+    active_source: Optional[str] = "12Data"
     last_update: str
 
 
@@ -206,3 +207,84 @@ async def get_dashboard_data():
         "positions": trading_service.get_positions_data(),
         "signal": trading_service.get_last_signal(),
     }
+
+
+@router.get("/history")
+async def get_history(limit: int = 100, timeframe: str = "H1"):
+    """Get historical indicator data for charts with timeframe support"""
+    if trading_service is None:
+        raise HTTPException(status_code=503, detail="Trading service not initialized")
+
+    return trading_service.get_history(limit, timeframe)
+
+
+@router.get("/rates/{timeframe}")
+async def get_rates_for_timeframe(timeframe: str, count: int = 100):
+    """Get raw price rates for a specific timeframe (M1, M5, M15, H1, H4, D1)"""
+    if trading_service is None:
+        raise HTTPException(status_code=503, detail="Trading service not initialized")
+
+    valid_timeframes = ["M1", "M5", "M15", "M30", "H1", "H4", "D1", "W1"]
+    if timeframe not in valid_timeframes:
+        raise HTTPException(status_code=400, detail=f"Invalid timeframe. Use: {valid_timeframes}")
+
+    rates = await trading_service.get_rates_for_timeframe(timeframe, count)
+    return [
+        {
+            "timestamp": r.timestamp.isoformat(),
+            "open": r.open,
+            "high": r.high,
+            "low": r.low,
+            "close": r.close,
+            "volume": r.volume
+        }
+        for r in rates
+    ]
+
+
+@router.get("/config/api-status")
+async def get_api_status():
+    """Get current API calls enabled status"""
+    if trading_service is None:
+        raise HTTPException(status_code=503, detail="Trading service not initialized")
+
+    adapter = trading_service.adapter
+    return {
+        "api_calls_enabled": getattr(adapter, 'is_api_calls_enabled', True),
+        "available_keys": getattr(adapter, 'available_keys', 0),
+        "provider": getattr(adapter, '_provider_name', 'unknown')
+    }
+
+
+class ToggleApiRequest(BaseModel):
+    enabled: bool
+
+
+@router.post("/config/toggle-api")
+async def toggle_api_calls(request: ToggleApiRequest):
+    """Enable or disable API calls to save quota"""
+    if trading_service is None:
+        raise HTTPException(status_code=503, detail="Trading service not initialized")
+
+    adapter = trading_service.adapter
+    if hasattr(adapter, 'enable_api_calls'):
+        adapter.enable_api_calls(request.enabled)
+        return {
+            "success": True,
+            "api_calls_enabled": adapter.is_api_calls_enabled,
+            "message": f"API calls {'enabled' if request.enabled else 'disabled'}"
+        }
+    else:
+        return {
+            "success": False,
+            "message": "Adapter does not support API toggle"
+        }
+
+
+@router.get("/trades")
+async def get_trade_history():
+    """Get trade history with P/L for win rate calculation"""
+    if trading_service is None:
+        raise HTTPException(status_code=503, detail="Trading service not initialized")
+
+    return trading_service.get_trade_history()

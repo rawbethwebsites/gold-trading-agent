@@ -34,14 +34,23 @@ def get_adapter():
         from adapters.mock_adapter import MockAdapter
         return MockAdapter()
     elif provider == "twelve_data":
-        logger.info("Using Twelve Data Adapter (real gold prices)")
+        logger.info("Using Twelve Data Adapter (real gold prices, data only)")
         from adapters.twelve_data_adapter import TwelveDataAdapter
         return TwelveDataAdapter(
             api_keys=config.twelve_data.api_keys,
             api_calls_enabled=config.twelve_data.api_calls_enabled
         )
+    elif provider == "demo_trading":
+        logger.info("Using Demo Trading Adapter (real prices + simulated trading)")
+        logger.info("✨ No MT5 required! Full demo trading with virtual account.")
+        from adapters.demo_trading_adapter import DemoTradingAdapter
+        return DemoTradingAdapter(
+            initial_balance=config.account.initial_balance,
+            symbol=config.mt5.symbol,
+            api_keys=config.twelve_data.api_keys
+        )
     else:
-        logger.info("Using MT5 Adapter (local terminal)")
+        logger.info("Using MT5 Adapter (local terminal + real broker)")
         from adapters.mt5_adapter import MT5Adapter
         return MT5Adapter()
 

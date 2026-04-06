@@ -126,6 +126,8 @@ class TradingAdapter(DataAdapter):
 # Import implementations after base classes are defined to avoid circular imports
 from .mt5_adapter import MT5Adapter
 from .mock_adapter import MockAdapter
+from .twelve_data_adapter import TwelveDataAdapter
+from .demo_trading_adapter import DemoTradingAdapter
 
 __all__ = [
     "DataAdapter",
@@ -135,4 +137,6 @@ __all__ = [
     "Position",
     "MT5Adapter",
     "MockAdapter",
+    "TwelveDataAdapter",
+    "DemoTradingAdapter",
 ]

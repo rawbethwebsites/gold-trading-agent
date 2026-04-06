@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>gold-price-dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <style>
+    :root{
+      --bg:#0f1012;
+      --surface:#17181b;
+      --surface-2:#1d1f23;
+      --surface-3:#23262b;
+      --border:rgba(255,255,255,.07);
+      --grid:rgba(255,255,255,.05);
+      --text:#f1f3f5;
+      --muted:#a2a9b3;
+      --faint:#6b7280;
+      --green:#58d17a;
+      --red:#ff6d8c;
+      --gold:#f0c36b;
+      --shadow:0 12px 28px rgba(0,0,0,.32);
+      --radius-xl:18px;
+      --radius-lg:14px;
+      --radius-md:10px;
+      --radius-full:999px;
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{
+      min-height:100vh;
+      font-family:'Inter',sans-serif;
+      background:radial-gradient(circle at top, #1a1b1f 0%, #111215 52%, #0b0c0f 100%);
+      color:var(--text);
+      padding:24px;
+    }
+    button,input,select{font:inherit;color:inherit}
+    button{cursor:pointer;border:none;background:none}
+    .container{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
+    .quote-card,.panel{
+      background:linear-gradient(180deg,var(--surface-2),var(--surface));
+      border:1px solid var(--border);
+      border-radius:var(--radius-xl);
+      box-shadow:var(--shadow);
+      overflow:hidden;
+    }
+    .top{
+      display:flex;align-items:center;justify-content:space-between;gap:16px;
+      padding:14px 16px;border-bottom:1px solid var(--border)
+    }
+    .asset{display:flex;align-items:center;gap:12px}
+    .xbtn{
+      width:28px;height:28px;border-radius:999px;border:1px solid var(--border);
+      display:grid;place-items:center;background:rgba(255,255,255,.03);color:var(--muted);font-size:14px
+    }
+    .asset h1{font-size:18px;font-weight:600;letter-spacing:-.02em}
+    .asset p{font-size:12px;color:var(--muted);margin-top:2px}
+    .follow{
+      padding:8px 12px;border-radius:999px;border:1px solid var(--border);
+      background:rgba(255,255,255,.03);font-size:13px;color:#d7d8dc
+    }
+    .headline{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--border)}
+    .headline-box{padding:14px 16px;min-height:78px}
+    .headline-box + .headline-box{border-left:1px solid var(--border)}
+    .price-line{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+    .price{font-size:31px;font-family:'IBM Plex Mono',monospace;letter-spacing:-.03em}
+    .move{font-size:14px;font-weight:600}
+    .red{color:var(--red)}
+    .green{color:var(--green)}
+    .stamp{font-size:12px;color:var(--muted);margin-top:4px}
+    .controls{
+      display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;
+      padding:10px 14px;border-bottom:1px solid var(--border);background:rgba(255,255,255,.01)
+    }
+    .left-controls,.right-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .chip,.icon-chip{
+      height:34px;border-radius:10px;border:1px solid var(--border);background:#202227;color:#d8dbe0;
+      padding:0 11px;font-size:12px;font-weight:500;display:inline-flex;align-items:center;gap:6px
+    }
+    .icon-chip{width:34px;justify-content:center;padding:0}
+    .brand{font-size:13px;color:#9ea3ab}
+    .chart-area{padding:0 10px 6px;background:linear-gradient(180deg,#191a1d,#17181b)}
+    .chart-wrap{height:280px}
+    .stats-row{display:grid;grid-template-columns:repeat(5,1fr);border-top:1px solid var(--border)}
+    .stat{padding:14px 16px;border-right:1px solid var(--border)}
+    .stat:last-child{border-right:none}
+    .stat-label{font-size:12px;color:var(--muted);margin-bottom:6px}
+    .stat-value{font-size:18px;font-family:'IBM Plex Mono',monospace;letter-spacing:-.02em}
+    .cta{padding:14px 16px 16px;border-top:1px solid var(--border);display:flex;justify-content:center;background:rgba(255,255,255,.01)}
+    .cta button{padding:11px 18px;border-radius:12px;border:1px solid var(--border);background:#202227;color:#ececec;font-size:14px}
+
+    .layout{display:grid;grid-template-columns:1.35fr .95fr;gap:16px}
+    .stack{display:flex;flex-direction:column;gap:16px}
+    .panel-head{padding:14px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .panel-head h2{font-size:14px;font-weight:600;letter-spacing:-.02em}
+    .panel-head p{font-size:12px;color:var(--muted);margin-top:2px}
+    .panel-body{padding:14px 16px}
+
+    table{width:100%;border-collapse:collapse}
+    th,td{text-align:left;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.05)}
+    th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);font-weight:700}
+    td{font-size:13px;color:#e8eaee}
+    tr:last-child td{border-bottom:none}
+    .mono{font-family:'IBM Plex Mono',monospace}
+    .badge{display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;font-size:11px;font-weight:700}
+    .badge.up{background:rgba(88,209,122,.12);color:var(--green)}
+    .badge.down{background:rgba(255,109,140,.12);color:var(--red)}
+
+    .field-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .field{display:flex;flex-direction:column;gap:6px}
+    .field label{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);font-weight:700}
+    .field input,.field select{height:42px;border-radius:12px;border:1px solid var(--border);background:#1f2125;padding:0 12px;outline:none}
+    .result-box,.source-item,.alert-item{margin-top:12px;padding:12px;border-radius:12px;border:1px solid var(--border);background:#1d1f23}
+    .source-list,.alert-list{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+    .source-item strong,.alert-item strong{display:block;font-size:13px}
+    .source-item span,.alert-item span,.muted{font-size:12px;color:var(--muted)}
+    .actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+    .btn-primary,.btn-secondary{height:42px;border-radius:12px;font-size:13px;font-weight:600}
+    .btn-primary{background:#262a31;border:1px solid var(--border);color:var(--text)}
+    .btn-secondary{background:rgba(240,195,107,.11);border:1px solid rgba(240,195,107,.18);color:var(--gold)}
+    .footer-note{font-size:11px;color:var(--faint);margin-top:12px}
+
+    @media (max-width: 960px){
+      .headline{grid-template-columns:1fr}
+      .headline-box + .headline-box{border-left:none;border-top:1px solid var(--border)}
+      .layout{grid-template-columns:1fr}
+      .stats-row{grid-template-columns:repeat(2,1fr)}
+      .stat:nth-child(2n){border-right:none}
+    }
+    @media (max-width: 640px){
+      body{padding:12px}
+      .price{font-size:24px}
+      .stats-row{grid-template-columns:1fr}
+      .stat{border-right:none;border-bottom:1px solid var(--border)}
+      .stat:last-child{border-bottom:none}
+      .field-grid,.actions{grid-template-columns:1fr}
+      .follow{display:none}
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <section class="quote-card">
+      <div class="top">
+        <div class="asset">
+          <div class="xbtn">×</div>
+          <div>
+            <h1>XAU/USD</h1>
+            <p>XAUUSD · FX</p>
+          </div>
+        </div>
+        <button class="follow">☆ Follow</button>
+      </div>
+
+      <div class="headline">
+        <div class="headline-box">
+          <div class="price-line">
+            <div class="price" id="spotPrice">4,657.72</div>
+            <div class="move red" id="spotMove">-19.03 ↘ 0.41%</div>
+          </div>
+          <div class="stamp" id="spotStamp">At close: Apr 6, 10:43:36 PM EDT</div>
+        </div>
+        <div class="headline-box">
+          <div class="price-line">
+            <div class="price" id="afterPrice">4,657.72</div>
+            <div class="move" style="color:var(--muted)" id="afterMove">0.00 — 0.00%</div>
+          </div>
+          <div class="stamp">After-hours: Apr 6, 10:43:36 PM EDT</div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <div class="left-controls">
+          <button class="chip">1D ▾</button>
+          <button class="icon-chip">⌁</button>
+          <button class="icon-chip">⚙</button>
+          <button class="chip">Compare ▾</button>
+          <button class="icon-chip">⌗</button>
+          <button class="icon-chip">⋮</button>
+        </div>
+        <div class="right-controls">
+          <div class="brand">perplexity</div>
+        </div>
+      </div>
+
+      <div class="chart-area">
+        <div class="chart-wrap"><canvas id="chart"></canvas></div>
+      </div>
+
+      <div class="stats-row">
+        <div class="stat"><div class="stat-label">Prev Close</div><div class="stat-value" id="prevClose">4,676.75</div></div>
+        <div class="stat"><div class="stat-label">Open</div><div class="stat-value" id="openVal">4,638.25</div></div>
+        <div class="stat"><div class="stat-label">Day Range</div><div class="stat-value" id="dayRange">4,600.85–4,706.88</div></div>
+        <div class="stat"><div class="stat-label">52W Range</div><div class="stat-value" id="range52">2,969.97–5,602.23</div></div>
+        <div class="stat"><div class="stat-label">Volume</div><div class="stat-value" id="volumeVal">785.51K</div></div>
+      </div>
+
+      <div class="cta">
+        <button>Deep dive on Perplexity Finance  ›</button>
+      </div>
+    </section>
+
+    <section class="layout">
+      <div class="stack">
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Historical Snapshots</h2>
+              <p>Recent price points with quick direction tags</p>
+            </div>
+          </div>
+          <div class="panel-body">
+            <table>
+              <thead><tr><th>Time</th><th>Price</th><th>Change</th></tr></thead>
+              <tbody id="historyBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Data Sources</h2>
+              <p>Keep these secondary until broker feed is connected</p>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="source-list">
+              <div class="source-item"><strong>metals.live</strong><span>Real-time spot reference</span></div>
+              <div class="source-item"><strong>goldprice.org</strong><span>Public market check</span></div>
+              <div class="source-item"><strong>Broker stream</strong><span>Use this as execution truth when connected</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="stack">
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Gold Converter</h2>
+              <p>Secondary utility, kept below the quote card</p>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="field-grid">
+              <div class="field">
+                <label>Amount</label>
+                <input id="amount" type="number" value="1" step="any" />
+              </div>
+              <div class="field">
+                <label>Unit</label>
+                <select id="unit">
+                  <option value="oz">Troy oz</option>
+                  <option value="g">Grams</option>
+                  <option value="kg">Kilograms</option>
+                  <option value="tola">Tola</option>
+                </select>
+              </div>
+            </div>
+            <div class="field" style="margin-top:12px">
+              <label>Currency</label>
+              <select id="currency">
+                <option value="USD">USD</option>
+                <option value="NGN">NGN</option>
+                <option value="EUR">EUR</option>
+                <option value="GBP">GBP</option>
+              </select>
+            </div>
+            <div class="actions">
+              <button class="btn-primary" id="convertBtn">Calculate</button>
+              <button class="btn-secondary">Pin Utility</button>
+            </div>
+            <div class="result-box">
+              <strong id="resultValue">$4,657.72</strong>
+              <div class="muted" id="resultNote">1 troy oz of gold in USD</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <div>
+              <h2>Price Alerts</h2>
+              <p>Keep alerts, but quieter than the main market card</p>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="field-grid">
+              <div class="field">
+                <label>Target</label>
+                <input id="alertPrice" type="number" placeholder="4660" />
+              </div>
+              <div class="field">
+                <label>Condition</label>
+                <select id="alertCond">
+                  <option value="above">Price ≥</option>
+                  <option value="below">Price ≤</option>
+                </select>
+              </div>
+            </div>
+            <div class="actions">
+              <button class="btn-primary" id="addAlert">Add Alert</button>
+              <button class="btn-secondary">Demo Safe</button>
+            </div>
+            <div class="alert-list" id="alertList">
+              <div class="alert-item"><strong>No alerts yet</strong><span>Add one above to monitor price</span></div>
+            </div>
+            <div class="footer-note">Alerts fire in-browser only. Trading stays broker-first.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const prevClose = 4676.75;
+    const openVal = 4638.25;
+    const points = [4646,4669,4651,4643,4678,4688,4699,4684,4677,4658,4670,4657.72];
+    const labels = ['12 AM','1 AM','2 AM','3 AM','4 AM','5 AM','6 AM','7 AM','8 AM','9 AM','10 AM','Now'];
+    const currentPrice = points[points.length-1];
+
+    document.getElementById('spotPrice').textContent = currentPrice.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+    document.getElementById('afterPrice').textContent = currentPrice.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+
+    const change = +(currentPrice - prevClose).toFixed(2);
+    const pct = +((change / prevClose) * 100).toFixed(2);
+    const moveEl = document.getElementById('spotMove');
+    moveEl.textContent = `${change > 0 ? '+' : ''}${change.toFixed(2)} ${change > 0 ? '↗' : '↘'} ${Math.abs(pct).toFixed(2)}%`;
+    moveEl.className = 'move ' + (change >= 0 ? 'green' : 'red');
+
+    const segmentColor = (ctx) => ((ctx.p0.parsed.y + ctx.p1.parsed.y)/2 >= prevClose ? '#58d17a' : '#ff6d8c');
+    new Chart(document.getElementById('chart').getContext('2d'), {
+      type:'line',
+      data:{
+        labels,
+        datasets:[
+          {data:points,borderWidth:2,pointRadius:0,tension:.34,segment:{borderColor:segmentColor},fill:false},
+          {data:labels.map(()=>prevClose),borderColor:'rgba(255,255,255,.16)',borderWidth:1,borderDash:[5,5],pointRadius:0,tension:0,fill:false}
+        ]
+      },
+      options:{
+        responsive:true,maintainAspectRatio:false,interaction:{mode:'index',intersect:false},
+        plugins:{legend:{display:false},tooltip:{backgroundColor:'#1f1f20',borderColor:'rgba(255,255,255,.08)',borderWidth:1,titleColor:'#f3f4f6',bodyColor:'#d1d5db',displayColors:false,
+          callbacks:{label:(ctx)=>ctx.datasetIndex===0?'$'+ctx.parsed.y.toLocaleString():null}}},
+        scales:{
+          x:{grid:{color:'rgba(255,255,255,.04)'},ticks:{color:'#767b84',maxTicksLimit:5},border:{display:false}},
+          y:{min:4630,max:4710,grid:{color:'rgba(255,255,255,.05)'},ticks:{color:'#767b84',callback:(v)=>v.toLocaleString()},border:{display:false}}
+        }
+      }
+    });
+
+    const history = [
+      ['10:43 PM',4657.72,-19.03],
+      ['10:12 PM',4663.80,-12.95],
+      ['09:47 PM',4670.10,-6.65],
+      ['09:15 PM',4681.42,4.67],
+      ['08:40 PM',4672.95,-3.80],
+      ['08:05 PM',4684.21,7.46],
+    ];
+    const tbody = document.getElementById('historyBody');
+    tbody.innerHTML = history.map(([t,p,c]) => `<tr><td>${t}</td><td class="mono">${p.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td><span class="badge ${c>=0?'up':'down'}">${c>=0?'+':''}${c.toFixed(2)}</span></td></tr>`).join('');
+
+    const FX = {USD:1, NGN:1650, EUR:0.92, GBP:0.79};
+    const UNIT = {oz:1, g:0.0321507, kg:32.1507, tola:0.374878};
+    function convert(){
+      const amount = parseFloat(document.getElementById('amount').value || '0');
+      const unit = document.getElementById('unit').value;
+      const currency = document.getElementById('currency').value;
+      const oz = amount * UNIT[unit];
+      const usd = oz * currentPrice;
+      const value = usd * FX[currency];
+      const fmt = new Intl.NumberFormat('en-US',{style:'currency',currency,maximumFractionDigits: currency==='NGN'?0:2});
+      document.getElementById('resultValue').textContent = fmt.format(value);
+      document.getElementById('resultNote').textContent = `${amount} ${unit} of gold in ${currency}`;
+    }
+    document.getElementById('convertBtn').addEventListener('click', convert);
+    convert();
+
+    const alertList = document.getElementById('alertList');
+    const alerts = [];
+    document.getElementById('addAlert').addEventListener('click', () => {
+      const p = parseFloat(document.getElementById('alertPrice').value || '0');
+      const cond = document.getElementById('alertCond').value;
+      if(!p) return;
+      alerts.push({p,cond});
+      renderAlerts();
+      document.getElementById('alertPrice').value = '';
+    });
+    function renderAlerts(){
+      if(!alerts.length){
+        alertList.innerHTML = '<div class="alert-item"><strong>No alerts yet</strong><span>Add one above to monitor price</span></div>';
+        return;
+      }
+      alertList.innerHTML = alerts.map(a => `<div class="alert-item"><strong>Gold ${a.cond === 'above' ? '≥' : '≤'} ${a.p.toLocaleString()}</strong><span>Browser alert active</span></div>`).join('');
+    }
+  </script>
+</body>
+</html>

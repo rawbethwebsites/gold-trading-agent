@@ -40,6 +40,7 @@ class AccountConfig:
     account_number: Optional[int] = None
     account_password: Optional[str] = None
     server: str = "Exness-MT5"
+    initial_balance: float = 10000.0  # Starting balance for demo trading mode
 
 
 @dataclass
@@ -117,6 +118,7 @@ class Config:
             account_number=self._get_int("ACCOUNT_NUMBER", None),
             account_password=os.getenv("ACCOUNT_PASSWORD"),
             server=os.getenv("ACCOUNT_SERVER", "Exness-MT5"),
+            initial_balance=self._get_float("INITIAL_BALANCE", 10000.0),
         )
 
         self.metaapi = MetaApiConfig(
