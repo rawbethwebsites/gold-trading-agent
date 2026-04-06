@@ -93,7 +93,7 @@ class TwelveDataAdapter(TradingAdapter):
             try:
                 async with aiohttp.ClientSession() as session:
                     url = f"{self._base_url}/quote?symbol=XAU/USD&apikey={key}"
-                    async with session.get(url, timeout=5) as response:
+                    async with session.get(url, timeout=15) as response:
                         if response.status == 200:
                             data = await response.json()
                             if 'close' in data:
@@ -158,7 +158,7 @@ class TwelveDataAdapter(TradingAdapter):
             try:
                 async with aiohttp.ClientSession() as session:
                     url = f"{self._base_url}/quote?symbol=XAU/USD&apikey={key}"
-                    async with session.get(url, timeout=5) as response:
+                    async with session.get(url, timeout=15) as response:
                         if response.status == 200:
                             data = await response.json()
                             if 'close' in data:
