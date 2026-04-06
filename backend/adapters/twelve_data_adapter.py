@@ -82,7 +82,7 @@ class TwelveDataAdapter(TradingAdapter):
             return False
 
         # Try each key until one works
-        for _ in range(len(self._api_keys)):
+        for attempt in range(len(self._api_keys)):
             key = self._current_key
             if not key:
                 self._reset_failed_keys()
@@ -97,18 +97,35 @@ class TwelveDataAdapter(TradingAdapter):
                         if response.status == 200:
                             data = await response.json()
                             if 'close' in data:
+                                print(f"✅ Connected using API key {attempt + 1}")
                                 self._connected = True
                                 return True
+                            elif 'code' in data and data['code'] == 429:
+                                # Rate limited in response body
+                                print(f"⚠️  Key {attempt + 1} rate limited")
+                                self._mark_key_failed(key)
+                                self._rotate_key()
+                            else:
+                                print(f"⚠️  Key {attempt + 1} error: {data.get('message', 'Unknown')}")
+                                self._mark_key_failed(key)
+                                self._rotate_key()
                         elif response.status == 429:
-                            # Rate limited
+                            # Rate limited via HTTP status
+                            print(f"⚠️  Key {attempt + 1} rate limited (HTTP 429)")
                             self._mark_key_failed(key)
                             self._rotate_key()
+                        else:
+                            print(f"⚠️  Key {attempt + 1} HTTP error: {response.status}")
+                            self._rotate_key()
+            except asyncio.TimeoutError:
+                print(f"⏱️  Key {attempt + 1} timeout, trying next...")
+                self._rotate_key()
             except Exception as e:
-                print(f"Connection error: {e}")
+                print(f"❌ Key {attempt + 1} error: {e}")
                 self._rotate_key()
 
         # All keys failed, use cached mode
-        print("⚠️  All API keys rate limited, switching to cached mode")
+        print("⚠️  All API keys exhausted, switching to cached mode")
         self._api_calls_enabled = False
         self._connected = True
         return True
