@@ -471,7 +471,7 @@ export default function GoldTradingDashboard() {
           updated[lastIdx] = { ...updated[lastIdx], price: backendPrice }
           return updated
         })
-        setCurrentTick(prev => prev ? { ...prev, price: backendPrice } : prev)
+        setCurrentTick((prev: any) => prev ? { ...prev, price: backendPrice } : prev)
       }
       setError(null)
     } catch (err) {
