@@ -9,11 +9,11 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  Area,
   ComposedChart,
-  ReferenceLine
+  ReferenceLine,
+  Scatter
 } from 'recharts'
-import { Activity, Bell, AlertTriangle } from 'lucide-react'
+import { Activity, Bell, AlertTriangle, ChevronDown, ChevronUp, Settings } from 'lucide-react'
 
 const API_BASE = 'http://localhost:8000/api'
 const POLLING_INTERVAL = 5000 // 5 seconds
@@ -89,16 +89,42 @@ interface DashboardData {
   } | null
 }
 
+// Asset configurations with realistic base prices
+const ASSET_CONFIG: Record<string, { basePrice: number; tickSize: number; pipValue: number; name: string; contractSize: number }> = {
+  XAUUSD: { basePrice: 4650, tickSize: 0.01, pipValue: 0.01, name: 'Gold', contractSize: 100 },
+  BTCUSD: { basePrice: 83000, tickSize: 0.1, pipValue: 0.01, name: 'Bitcoin', contractSize: 1 }
+}
+
+// Calculate EMA
+function calculateEMA(prices: number[], period: number): number {
+  if (prices.length < period) return prices[prices.length - 1] || 0
+  const multiplier = 2 / (period + 1)
+  let ema = prices.slice(0, period).reduce((a, b) => a + b, 0) / period
+  for (let i = period; i < prices.length; i++) {
+    ema = (prices[i] - ema) * multiplier + ema
+  }
+  return ema
+}
+
+// Generate realistic price movement
+function generateNextTick(currentPrice: number, volatility: number, tickSize: number): number {
+  const maxMove = tickSize * volatility * (Math.random() * 2 + 1) // Random factor 1-3
+  const move = (Math.random() - 0.5) * maxMove
+  return Math.max(currentPrice + move, tickSize)
+}
+
 export default function GoldTradingDashboard() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  
+
   // Custom states
   const [isLive, setIsLive] = useState(true)
   const [apiEnabled, setApiEnabled] = useState<boolean>(true)
   const [historicalData, setHistoricalData] = useState<any[]>([])
+  const [currentTick, setCurrentTick] = useState<any>(null)
   const hasSeeded = useRef(false)
+  const tickIntervalRef = useRef<NodeJS.Timeout | null>(null)
 
   // Timeframe state - M1=1 minute, M5=5 minute, M15=15 minute, H1=1 hour, H4=4 hour, D1=1 day
   const [timeframe, setTimeframe] = useState<string>('H1')
@@ -109,6 +135,15 @@ export default function GoldTradingDashboard() {
   // Asset state - XAUUSD (Gold) or BTCUSD (Bitcoin)
   const [asset, setAsset] = useState<string>('XAUUSD')
   const [assetPrices, setAssetPrices] = useState<Record<string, number>>({})
+
+  // Controls panel state
+  const [showControls, setShowControls] = useState(true)
+  const [basePrice, setBasePrice] = useState<number>(ASSET_CONFIG.XAUUSD.basePrice)
+  const [volatility, setVolatility] = useState<number>(5)
+  const [tickSpeed, setTickSpeed] = useState<number>(1500)
+  const [lotSize, setLotSize] = useState<number>(0.01)
+  const [riskPercent, setRiskPercent] = useState<number>(1)
+  const [accountBalance, setAccountBalance] = useState<number>(10000)
 
   // Fetch asset prices
   const fetchAssetPrices = useCallback(async () => {
@@ -142,13 +177,49 @@ export default function GoldTradingDashboard() {
 
   const FX: Record<string, number> = {USD:1, NGN:1650, EUR:0.92, GBP:0.79}
   const UNIT: Record<string, number> = {oz:1, g:0.0321507, kg:32.1507, tola:0.374878}
-  
+
   const getConvertedValue = () => {
-     const price = data?.price?.close || 4600 // fallback mock base
+     const price = currentTick?.price || basePrice
      const oz = convAmount * UNIT[convUnit]
      const usd = oz * price
      return usd * FX[convCurrency]
   }
+
+  // Trading calculations
+  const currentPrice = currentTick?.price || basePrice
+  const config = ASSET_CONFIG[asset]
+  const positionValue = lotSize * config.contractSize * currentPrice
+  const riskAmount = accountBalance * (riskPercent / 100)
+  const pipValue = asset === 'XAUUSD'
+    ? (lotSize * 10) // Gold: $10 per pip per lot
+    : (lotSize * 1)  // Bitcoin: $1 per pip per lot
+
+  // Initialize price simulation based on asset
+  useEffect(() => {
+    const config = ASSET_CONFIG[asset]
+    setBasePrice(config.basePrice)
+    // Reset chart when asset changes
+    const initialData = []
+    const now = Date.now()
+    let price = config.basePrice
+    for (let i = 50; i > 0; i--) {
+      price = generateNextTick(price, volatility / 2, config.tickSize)
+      const timestamp = new Date(now - i * tickSpeed).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'})
+      initialData.push({
+        timestamp,
+        price,
+        ema_9: price,
+        ema_21: price,
+        rsi_14: 50 + (Math.random() - 0.5) * 20
+      })
+    }
+    setHistoricalData(initialData)
+    setCurrentTick(initialData[initialData.length - 1])
+    // Clear AI results on asset switch
+    setAIAnalysis(null)
+    setAIDebate(null)
+    setAIRisk(null)
+  }, [asset])
 
   // Initialize from localStorage and fetch API status
   useEffect(() => {
@@ -156,7 +227,7 @@ export default function GoldTradingDashboard() {
     if (saved !== null) {
       setIsLive(saved === 'true')
     }
-    
+
     // Fetch Twelve Data API status
     const fetchApiStatus = async () => {
        try {
@@ -171,6 +242,48 @@ export default function GoldTradingDashboard() {
     }
     fetchApiStatus()
   }, [])
+
+  // Live tick simulation
+  useEffect(() => {
+    if (!isLive) {
+      if (tickIntervalRef.current) {
+        clearInterval(tickIntervalRef.current)
+        tickIntervalRef.current = null
+      }
+      return
+    }
+
+    const config = ASSET_CONFIG[asset]
+    tickIntervalRef.current = setInterval(() => {
+      setHistoricalData(prevData => {
+        if (prevData.length === 0) return prevData
+
+        const lastPrice = prevData[prevData.length - 1]?.price || basePrice
+        const newPrice = generateNextTick(lastPrice, volatility, config.tickSize)
+        const prices = [...prevData.map(d => d.price), newPrice]
+        const ema9 = calculateEMA(prices.slice(-10), 9)
+        const ema21 = calculateEMA(prices.slice(-22), 21)
+
+        const newTick = {
+          timestamp: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'}),
+          price: newPrice,
+          ema_9: ema9,
+          ema_21: ema21,
+          rsi_14: 50 + (Math.random() - 0.5) * 20
+        }
+
+        setCurrentTick(newTick)
+        // Keep last 100 ticks for smooth scrolling
+        return [...prevData.slice(-99), newTick]
+      })
+    }, tickSpeed)
+
+    return () => {
+      if (tickIntervalRef.current) {
+        clearInterval(tickIntervalRef.current)
+      }
+    }
+  }, [isLive, tickSpeed, volatility, asset, basePrice])
 
   const toggleLive = () => {
     const next = !isLive
@@ -199,32 +312,10 @@ export default function GoldTradingDashboard() {
      }
   }
 
-  // Fetch historical rates for selected timeframe
+  // Fetch historical rates for selected timeframe - disabled in favor of simulation
   const fetchTimeframeData = useCallback(async () => {
-    if (!isLive && !loading) return
-
-    try {
-      const tf = timeframeMap[timeframe] || 'H1'
-      const response = await fetch(`${API_BASE}/rates/${tf}?count=50`)
-      if (!response.ok) {
-        console.error('Failed to fetch timeframe data')
-        return
-      }
-      const rates = await response.json()
-
-      // Convert rates to chart format
-      const chartData = rates.map((r: any, index: number) => ({
-        timestamp: new Date(r.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
-        price: r.close,
-        ema_9: r.close, // Simplified - backend calculates actual EMAs
-        ema_21: r.close,
-        rsi_14: 50 + (Math.random() - 0.5) * 20 // Placeholder
-      }))
-
-      setHistoricalData(chartData)
-    } catch (err) {
-      console.error('Error fetching timeframe data:', err)
-    }
+    // Simulation generates its own data, no need to fetch from backend
+    return
   }, [timeframe, isLive, loading])
 
   // Fetch data from backend
@@ -239,28 +330,8 @@ export default function GoldTradingDashboard() {
       }
       const dashboardData = await response.json()
 
-      // Only update current price from dashboard, timeframe data comes from fetchTimeframeData
-      if (dashboardData.price && dashboardData.indicators && historicalData.length === 0) {
-        // Seed with current price if no historical data yet
-        const basePrice = dashboardData.price.close
-        const baseRsi = dashboardData.indicators.rsi_14 || 50
-        const now = Date.now()
-        setHistoricalData(prev => {
-          if (prev.length > 0) return prev
-          let newHistory: any[] = []
-          for (let i = 25; i > 0; i--) {
-             newHistory.push({
-               timestamp: new Date(now - i * POLLING_INTERVAL).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'}),
-               price: basePrice + (Math.random() - 0.5) * 5,
-               ema_9: basePrice + (Math.random() - 0.5) * 2,
-               ema_21: basePrice + (Math.random() - 0.5) * 3,
-               rsi_14: Math.max(0, Math.min(100, baseRsi + (Math.random() - 0.5) * 20))
-             })
-          }
-          return newHistory
-        })
-      }
-
+      // Backend data is received but simulation generates its own prices
+      // Only use backend data for account/positions, not for price simulation
       setData(dashboardData)
       setError(null)
     } catch (err) {
@@ -348,11 +419,12 @@ export default function GoldTradingDashboard() {
   const price = data?.price
   const account = data?.account
   const positions = data?.positions || []
-  
-  const currentPrice = price?.close || 0
-  const openPrice = price?.open || currentPrice
-  const change = currentPrice - openPrice
-  const pctChange = openPrice ? (change / openPrice) * 100 : 0
+
+  // Use simulated price if live, otherwise use backend data
+  const displayPrice = currentTick?.price || price?.close || basePrice
+  const lastClose = historicalData.length > 1 ? historicalData[historicalData.length - 2]?.price : displayPrice
+  const change = displayPrice - lastClose
+  const pctChange = lastClose ? (change / lastClose) * 100 : 0
   const isUp = change >= 0
 
   if (loading) {
@@ -418,7 +490,7 @@ export default function GoldTradingDashboard() {
               <div className="headline-box" style={{padding: '14px 16px', minHeight: '80px', borderRight: '1px solid var(--border)'}}>
                 <div className="price-line" style={{display: 'flex', gap: '8px', alignItems: 'baseline'}}>
                   <div className="price mono" style={{fontSize: '31px', letterSpacing: '-0.03em'}}>
-                    {currentPrice > 0 ? currentPrice.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) : '--'}
+                    {displayPrice > 0 ? displayPrice.toLocaleString(undefined, {minimumFractionDigits: ASSET_CONFIG[asset].tickSize < 0.1 ? 2 : 0, maximumFractionDigits: ASSET_CONFIG[asset].tickSize < 0.1 ? 2 : 0}) : '--'}
                   </div>
                   <div className={`move ${isUp ? 'text-green' : 'text-red'}`} style={{fontSize: '14px', fontWeight: 600}}>
                     {change > 0 ? '+' : ''}{change.toFixed(2)} {isUp ? '↗' : '↘'} {Math.abs(pctChange).toFixed(2)}%
@@ -426,6 +498,7 @@ export default function GoldTradingDashboard() {
                 </div>
                 <div className="stamp text-muted text-xs mt-1">
                    {isLive ? `Live Tick Data: ${new Date().toLocaleTimeString()}` : 'Data Fetching Paused'}
+                   {currentTick && <span className="ml-2" style={{color: '#58d17a', animation: 'pulse 1s infinite'}}>●</span>}
                 </div>
               </div>
               <div className="headline-box" style={{padding: '14px 16px', minHeight: '80px'}}>
@@ -489,12 +562,12 @@ export default function GoldTradingDashboard() {
                   </div>
                )}
                
-               <div style={{height: '300px', width: '100%', marginTop: '10px'}}>
+               <div style={{height: '300px', width: '100%', marginTop: '10px', position: 'relative'}}>
                  <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={historicalData}>
                       <CartesianGrid stroke="rgba(255,255,255,0.04)" vertical={false} />
                       <XAxis dataKey="timestamp" stroke="#767b84" tick={{fontSize: 11}} axisLine={false} tickLine={false} minTickGap={30} />
-                      <YAxis domain={['auto', 'auto']} stroke="#767b84" tick={{fontSize: 11}} axisLine={false} tickLine={false} tickFormatter={(v)=>v.toFixed(1)} orientation="right" />
+                      <YAxis domain={['auto', 'auto']} stroke="#767b84" tick={{fontSize: 11}} axisLine={false} tickLine={false} tickFormatter={(v)=>v.toFixed(ASSET_CONFIG[asset].tickSize < 0.1 ? 1 : 0)} orientation="right" />
                       <Tooltip
                         contentStyle={{ backgroundColor: '#1f1f20', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', color: '#fff', fontSize: '13px' }}
                         itemStyle={{ fontFamily: 'var(--font-mono)' }}
@@ -502,8 +575,46 @@ export default function GoldTradingDashboard() {
                       <Line type="monotone" dataKey="price" stroke="#f0c36b" dot={false} strokeWidth={2} isAnimationActive={false} />
                       <Line type="monotone" dataKey="ema_9" stroke="#58d17a" dot={false} strokeWidth={1} strokeDasharray="4 4" isAnimationActive={false} />
                       <Line type="monotone" dataKey="ema_21" stroke="#3b82f6" dot={false} strokeWidth={1} strokeDasharray="4 4" isAnimationActive={false} />
+                      {/* Current price dot */}
+                      {historicalData.length > 0 && (
+                        <Scatter
+                          data={[historicalData[historicalData.length - 1]]}
+                          fill="#f0c36b"
+                          shape={(props: any) => {
+                            const { cx, cy } = props;
+                            return (
+                              <g>
+                                <circle cx={cx} cy={cy} r={6} fill="#f0c36b" opacity={0.3}>
+                                  <animate attributeName="r" values="6;10;6" dur="1s" repeatCount="indefinite" />
+                                  <animate attributeName="opacity" values="0.3;0;0.3" dur="1s" repeatCount="indefinite" />
+                                </circle>
+                                <circle cx={cx} cy={cy} r={4} fill="#f0c36b" />
+                              </g>
+                            );
+                          }}
+                        />
+                      )}
                     </ComposedChart>
                  </ResponsiveContainer>
+                 {/* Live indicator overlay */}
+                 {isLive && currentTick && (
+                   <div style={{
+                     position: 'absolute',
+                     top: '10px',
+                     right: '10px',
+                     background: 'rgba(0,0,0,0.7)',
+                     padding: '6px 12px',
+                     borderRadius: '6px',
+                     fontSize: '12px',
+                     color: '#58d17a',
+                     display: 'flex',
+                     alignItems: 'center',
+                     gap: '6px'
+                   }}>
+                     <span style={{width: '8px', height: '8px', background: '#58d17a', borderRadius: '50%', animation: 'pulse 1s infinite'}}></span>
+                     LIVE {currentTick.price.toLocaleString(undefined, {maximumFractionDigits: ASSET_CONFIG[asset].tickSize < 0.1 ? 2 : 0})}
+                   </div>
+                 )}
                </div>
                
                <div style={{height: '100px', width: '100%', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '10px'}}>
@@ -523,12 +634,158 @@ export default function GoldTradingDashboard() {
             </div>
 
             <div className="stats-row" style={{display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', borderTop: '1px solid var(--border)'}}>
-                <div className="stat" style={{padding: '14px 16px', borderRight: '1px solid var(--border)'}}><div className="stat-label" style={{fontSize: '12px', color: 'var(--muted)', marginBottom: '6px'}}>Prev Close</div><div className="stat-value mono" style={{fontSize: '18px', letterSpacing: '-0.02em'}}>{(currentPrice - (Math.random()*10)).toFixed(2)}</div></div>
-                <div className="stat" style={{padding: '14px 16px', borderRight: '1px solid var(--border)'}}><div className="stat-label" style={{fontSize: '12px', color: 'var(--muted)', marginBottom: '6px'}}>Open</div><div className="stat-value mono" style={{fontSize: '18px', letterSpacing: '-0.02em'}}>{openPrice.toFixed(2)}</div></div>
-                <div className="stat" style={{padding: '14px 16px', borderRight: '1px solid var(--border)'}}><div className="stat-label" style={{fontSize: '12px', color: 'var(--muted)', marginBottom: '6px'}}>Day Range</div><div className="stat-value mono text-sm flex items-center h-full">{(price?.low || currentPrice - 15).toFixed(2)} — {(price?.high || currentPrice + 15).toFixed(2)}</div></div>
-                <div className="stat" style={{padding: '14px 16px', borderRight: '1px solid var(--border)'}}><div className="stat-label" style={{fontSize: '12px', color: 'var(--muted)', marginBottom: '6px'}}>Volume</div><div className="stat-value mono" style={{fontSize: '18px', letterSpacing: '-0.02em'}}>{price?.volume?.toLocaleString() || '--'}</div></div>
-                <div className="stat" style={{padding: '14px 16px'}}><div className="stat-label" style={{fontSize: '12px', color: 'var(--muted)', marginBottom: '6px'}}>Spread</div><div className="stat-value mono" style={{fontSize: '18px', letterSpacing: '-0.02em'}}>{price?.ask && price?.bid ? (price.ask - price.bid).toFixed(2) : '--'}</div></div>
+                <div className="stat" style={{padding: '14px 16px', borderRight: '1px solid var(--border)'}}><div className="stat-label" style={{fontSize: '12px', color: 'var(--muted)', marginBottom: '6px'}}>Prev Close</div><div className="stat-value mono" style={{fontSize: '18px', letterSpacing: '-0.02em'}}>{lastClose.toLocaleString(undefined, {minimumFractionDigits: ASSET_CONFIG[asset].tickSize < 0.1 ? 2 : 0, maximumFractionDigits: ASSET_CONFIG[asset].tickSize < 0.1 ? 2 : 0})}</div></div>
+                <div className="stat" style={{padding: '14px 16px', borderRight: '1px solid var(--border)'}}><div className="stat-label" style={{fontSize: '12px', color: 'var(--muted)', marginBottom: '6px'}}>Open</div><div className="stat-value mono" style={{fontSize: '18px', letterSpacing: '-0.02em'}}>{historicalData[0]?.price?.toLocaleString(undefined, {minimumFractionDigits: ASSET_CONFIG[asset].tickSize < 0.1 ? 2 : 0, maximumFractionDigits: ASSET_CONFIG[asset].tickSize < 0.1 ? 2 : 0}) || '--'}</div></div>
+                <div className="stat" style={{padding: '14px 16px', borderRight: '1px solid var(--border)'}}><div className="stat-label" style={{fontSize: '12px', color: 'var(--muted)', marginBottom: '6px'}}>Day Range</div><div className="stat-value mono text-sm flex items-center h-full">{historicalData.length > 0 ? Math.min(...historicalData.map(d => d.price)).toLocaleString(undefined, {minimumFractionDigits: ASSET_CONFIG[asset].tickSize < 0.1 ? 2 : 0}) : '--'} — {historicalData.length > 0 ? Math.max(...historicalData.map(d => d.price)).toLocaleString(undefined, {minimumFractionDigits: ASSET_CONFIG[asset].tickSize < 0.1 ? 2 : 0}) : '--'}</div></div>
+                <div className="stat" style={{padding: '14px 16px', borderRight: '1px solid var(--border)'}}><div className="stat-label" style={{fontSize: '12px', color: 'var(--muted)', marginBottom: '6px'}}>Volume</div><div className="stat-value mono" style={{fontSize: '18px', letterSpacing: '-0.02em'}}>{Math.floor(Math.random() * 10000 + 5000).toLocaleString()}</div></div>
+                <div className="stat" style={{padding: '14px 16px'}}><div className="stat-label" style={{fontSize: '12px', color: 'var(--muted)', marginBottom: '6px'}}>Spread</div><div className="stat-value mono" style={{fontSize: '18px', letterSpacing: '-0.02em'}}>{ASSET_CONFIG[asset].tickSize.toFixed(ASSET_CONFIG[asset].tickSize < 0.1 ? 2 : 1)}</div></div>
             </div>
+          </div>
+
+          {/* Trading Controls Panel */}
+          <div className="panel" style={{marginTop: '20px'}}>
+            <div
+              className="panel-head"
+              style={{cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}
+              onClick={() => setShowControls(!showControls)}
+            >
+              <div>
+                <h2>Trading Controls</h2>
+                <p>Configure simulation & position sizing</p>
+              </div>
+              <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+                <Settings size={18} className="text-muted" />
+                {showControls ? <ChevronUp size={18} className="text-muted" /> : <ChevronDown size={18} className="text-muted" />}
+              </div>
+            </div>
+            {showControls && (
+            <div className="panel-body" style={{padding: '16px'}}>
+              <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '16px'}}>
+                {/* Price Controls */}
+                <div style={{background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '10px', border: '1px solid var(--border)'}}>
+                  <div style={{fontSize: '12px', fontWeight: 600, marginBottom: '10px', color: '#f0c36b', textTransform: 'uppercase'}}>Price Simulation</div>
+
+                  <div style={{marginBottom: '10px'}}>
+                    <label style={{display: 'block', fontSize: '11px', color: 'var(--muted)', marginBottom: '4px'}}>Base Price</label>
+                    <input
+                      type="number"
+                      value={basePrice}
+                      onChange={(e) => setBasePrice(parseFloat(e.target.value) || ASSET_CONFIG[asset].basePrice)}
+                      style={{width: '100%', height: '36px', borderRadius: '6px', border: '1px solid var(--border)', background: '#1f2125', padding: '0 10px', color: '#fff', fontSize: '13px'}}
+                    />
+                  </div>
+
+                  <div style={{marginBottom: '10px'}}>
+                    <label style={{display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--muted)', marginBottom: '4px'}}>
+                      <span>Volatility</span>
+                      <span style={{color: '#fff'}}>{volatility}/10</span>
+                    </label>
+                    <input
+                      type="range"
+                      min={1}
+                      max={10}
+                      value={volatility}
+                      onChange={(e) => setVolatility(parseInt(e.target.value))}
+                      style={{width: '100%', accentColor: '#58d17a'}}
+                    />
+                    <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--muted)', marginTop: '2px'}}>
+                      <span>Low</span>
+                      <span>High</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={{display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--muted)', marginBottom: '4px'}}>
+                      <span>Tick Speed</span>
+                      <span style={{color: '#fff'}}>{tickSpeed}ms</span>
+                    </label>
+                    <input
+                      type="range"
+                      min={500}
+                      max={5000}
+                      step={100}
+                      value={tickSpeed}
+                      onChange={(e) => setTickSpeed(parseInt(e.target.value))}
+                      style={{width: '100%', accentColor: '#3b82f6'}}
+                    />
+                    <div style={{display: 'flex', justifyContent: 'space-between', fontSize: '10px', color: 'var(--muted)', marginTop: '2px'}}>
+                      <span>Fast</span>
+                      <span>Slow</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Trade Size Controls */}
+                <div style={{background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '10px', border: '1px solid var(--border)'}}>
+                  <div style={{fontSize: '12px', fontWeight: 600, marginBottom: '10px', color: '#58d17a', textTransform: 'uppercase'}}>Position Size</div>
+
+                  <div style={{marginBottom: '10px'}}>
+                    <label style={{display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--muted)', marginBottom: '4px'}}>
+                      <span>Lot Size</span>
+                      <span style={{color: '#fff'}}>{lotSize.toFixed(2)}</span>
+                    </label>
+                    <input
+                      type="number"
+                      min={0.01}
+                      max={100}
+                      step={0.01}
+                      value={lotSize}
+                      onChange={(e) => setLotSize(parseFloat(e.target.value) || 0.01)}
+                      style={{width: '100%', height: '36px', borderRadius: '6px', border: '1px solid var(--border)', background: '#1f2125', padding: '0 10px', color: '#fff', fontSize: '13px'}}
+                    />
+                  </div>
+
+                  <div style={{marginBottom: '10px'}}>
+                    <label style={{display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--muted)', marginBottom: '4px'}}>
+                      <span>Risk %</span>
+                      <span style={{color: '#fff'}}>{riskPercent}%</span>
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={riskPercent}
+                      onChange={(e) => setRiskPercent(parseFloat(e.target.value) || 1)}
+                      style={{width: '100%', height: '36px', borderRadius: '6px', border: '1px solid var(--border)', background: '#1f2125', padding: '0 10px', color: '#fff', fontSize: '13px'}}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{fontSize: '11px', color: 'var(--muted)', marginBottom: '4px'}}>Account Balance</label>
+                    <input
+                      type="number"
+                      value={accountBalance}
+                      onChange={(e) => setAccountBalance(parseFloat(e.target.value) || 10000)}
+                      style={{width: '100%', height: '36px', borderRadius: '6px', border: '1px solid var(--border)', background: '#1f2125', padding: '0 10px', color: '#fff', fontSize: '13px'}}
+                    />
+                  </div>
+                </div>
+
+                {/* Calculated Values */}
+                <div style={{background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '10px', border: '1px solid var(--border)'}}>
+                  <div style={{fontSize: '12px', fontWeight: 600, marginBottom: '10px', color: '#3b82f6', textTransform: 'uppercase'}}>Calculated Values</div>
+
+                  <div style={{marginBottom: '12px', padding: '8px', background: 'rgba(59,130,246,0.1)', borderRadius: '6px'}}>
+                    <div style={{fontSize: '10px', color: '#3b82f6'}}>Position Value</div>
+                    <div style={{fontSize: '16px', fontWeight: 'bold', color: '#fff', fontFamily: 'var(--font-mono)'}}>${positionValue.toLocaleString(undefined, {maximumFractionDigits: 0})}</div>
+                    <div style={{fontSize: '10px', color: 'var(--muted)'}}>{lotSize} lots @ {displayPrice.toLocaleString(undefined, {maximumFractionDigits: ASSET_CONFIG[asset].tickSize < 0.1 ? 2 : 0})}</div>
+                  </div>
+
+                  <div style={{marginBottom: '12px', padding: '8px', background: 'rgba(255,109,140,0.1)', borderRadius: '6px'}}>
+                    <div style={{fontSize: '10px', color: '#ff6d8c'}}>Risk Amount</div>
+                    <div style={{fontSize: '16px', fontWeight: 'bold', color: '#ff6d8c', fontFamily: 'var(--font-mono)'}}>${riskAmount.toFixed(2)}</div>
+                    <div style={{fontSize: '10px', color: 'var(--muted)'}}>{riskPercent}% of ${accountBalance.toLocaleString()}</div>
+                  </div>
+
+                  <div style={{padding: '8px', background: 'rgba(88,209,122,0.1)', borderRadius: '6px'}}>
+                    <div style={{fontSize: '10px', color: '#58d17a'}}>Pip Value</div>
+                    <div style={{fontSize: '16px', fontWeight: 'bold', color: '#fff', fontFamily: 'var(--font-mono)'}}>${pipValue.toFixed(4)}</div>
+                    <div style={{fontSize: '10px', color: 'var(--muted)'}}>per 1 pip move</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            )}
           </div>
 
           {/* Trade History & Positions */}
