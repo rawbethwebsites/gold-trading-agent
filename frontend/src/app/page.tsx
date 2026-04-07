@@ -711,8 +711,8 @@ export default function GoldTradingDashboard() {
                       <YAxis
                         yAxisId="price"
                         domain={[
-                          (dataMin) => Math.floor((dataMin - dataMin * 0.0003) * 100) / 100,
-                          (dataMax) => Math.ceil((dataMax + dataMax * 0.0003) * 100) / 100
+                          (dataMin: number) => Math.floor((dataMin - dataMin * 0.0003) * 100) / 100,
+                          (dataMax: number) => Math.ceil((dataMax + dataMax * 0.0003) * 100) / 100
                         ]}
                         stroke="#767b84"
                         tick={{fontSize: 11}}
@@ -723,7 +723,6 @@ export default function GoldTradingDashboard() {
                         width={70}
                       />
                       <Tooltip
-                        yAxisId="price"
                         contentStyle={{ backgroundColor: '#1f1f20', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', color: '#fff', fontSize: '13px' }}
                         itemStyle={{ fontFamily: 'var(--font-mono)' }}
                         labelStyle={{ color: '#a2a9b3' }}
@@ -801,7 +800,6 @@ export default function GoldTradingDashboard() {
                      <XAxis xAxisId="time" dataKey="timestamp" hide />
                      <YAxis yAxisId="rsi" domain={[0, 100]} hide />
                      <Tooltip
-                        yAxisId="rsi"
                         contentStyle={{ backgroundColor: '#1f1f20', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', color: '#fff', fontSize: '13px' }}
                         itemStyle={{ fontFamily: 'var(--font-mono)' }}
                      />
@@ -1348,7 +1346,7 @@ export default function GoldTradingDashboard() {
                          }}
                        />
                        <button
-                         onClick={handleSendMessage}
+                         onClick={() => handleSendMessage()}
                          disabled={!chatInput.trim() || isTyping}
                          style={{
                            height: '40px',
