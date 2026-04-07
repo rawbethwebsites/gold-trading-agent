@@ -87,7 +87,8 @@ class MetaApiConfig:
 @dataclass
 class AppConfig:
     """Application settings"""
-    data_provider: str = "mt5"  # mt5, mock, twelve_data
+    data_provider: str = "mt5"  # mt5, mock, twelve_data, demo_trading, multi_asset
+    assets: str = "XAUUSD,BTCUSD"  # Comma-separated list for multi_asset mode
     backend_host: str = "0.0.0.0"
     backend_port: int = 8000
     polling_interval: int = 5
@@ -134,12 +135,13 @@ class Config:
 
         self.twelve_data = TwelveDataConfig(
             api_keys=api_keys,
-            enabled=os.getenv("DATA_PROVIDER") == "twelve_data",
+            enabled=os.getenv("DATA_PROVIDER") in ["twelve_data", "demo_trading", "multi_asset"],
             api_calls_enabled=self._get_bool("TWELVE_DATA_API_CALLS_ENABLED", True),
         )
 
         self.app = AppConfig(
             data_provider=os.getenv("DATA_PROVIDER", "mt5"),
+            assets=os.getenv("ASSETS", "XAUUSD,BTCUSD"),
             backend_host=os.getenv("BACKEND_HOST", "0.0.0.0"),
             backend_port=self._get_int("BACKEND_PORT", 8000),
             polling_interval=self._get_int("POLLING_INTERVAL", 5),

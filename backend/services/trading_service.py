@@ -127,13 +127,24 @@ class TradingService:
 
         logger.info("Polling loop stopped")
 
+    def _get_active_symbol(self) -> str:
+        """Get the currently active symbol from adapter or config"""
+        # Check if adapter has active_asset property (multi-asset mode)
+        if hasattr(self.adapter, 'active_asset'):
+            return self.adapter.active_asset
+        return self.state.symbol
+
     async def _tick(self):
         """Process one tick - get price, update indicators, check signals"""
-        # Get current price
-        price = await self.adapter.get_price(self.state.symbol)
+        # Get current price using active symbol
+        symbol = self._get_active_symbol()
+        price = await self.adapter.get_price(symbol)
         if price is None:
             logger.warning("Could not get price data")
             return
+
+        # Update state symbol in case it changed
+        self.state.symbol = symbol
 
         self.state.last_price = price
 
@@ -203,7 +214,7 @@ class TradingService:
         return {
             "connected": self.state.connected,
             "is_trading": self.state.is_trading,
-            "symbol": self.state.symbol,
+            "symbol": self._get_active_symbol(),
             "can_trade": config.can_trade,
             "error": self.state.error,
             "active_source": getattr(self.adapter, 'active_source', "Unknown"),
@@ -391,4 +402,5 @@ class TradingService:
 
     async def get_rates_for_timeframe(self, timeframe: str, count: int = 100) -> List[PriceData]:
         """Fetch historical rates for a specific timeframe"""
-        return await self.adapter.get_rates(self.state.symbol, timeframe, count)
+        symbol = self._get_active_symbol()
+        return await self.adapter.get_rates(symbol, timeframe, count)

@@ -128,6 +128,7 @@ from .mt5_adapter import MT5Adapter
 from .mock_adapter import MockAdapter
 from .twelve_data_adapter import TwelveDataAdapter
 from .demo_trading_adapter import DemoTradingAdapter
+from .multi_asset_adapter import MultiAssetAdapter, ASSETS
 
 __all__ = [
     "DataAdapter",
@@ -139,4 +140,6 @@ __all__ = [
     "MockAdapter",
     "TwelveDataAdapter",
     "DemoTradingAdapter",
+    "MultiAssetAdapter",
+    "ASSETS",
 ]

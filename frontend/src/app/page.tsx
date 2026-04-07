@@ -106,6 +106,27 @@ export default function GoldTradingDashboard() {
     '1M': 'M1', '5M': 'M5', '15M': 'M15', '1H': 'H1', '4H': 'H4', '1D': 'D1'
   }
 
+  // Asset state - XAUUSD (Gold) or BTCUSD (Bitcoin)
+  const [asset, setAsset] = useState<string>('XAUUSD')
+  const [assetPrices, setAssetPrices] = useState<Record<string, number>>({})
+
+  // Fetch asset prices
+  const fetchAssetPrices = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/assets`)
+      if (res.ok) {
+        const data = await res.json()
+        setAssetPrices(data.prices || {})
+        // If we have an active asset from backend, update it
+        if (data.active && data.active !== asset) {
+          setAsset(data.active)
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch asset prices:', err)
+    }
+  }, [asset])
+
   // Converter & Alerts States
   const [convAmount, setConvAmount] = useState<number>(1)
   const [convUnit, setConvUnit] = useState<string>('oz')
@@ -113,6 +134,11 @@ export default function GoldTradingDashboard() {
   const [alertTarget, setAlertTarget] = useState<string>('')
   const [alertCond, setAlertCond] = useState<string>('above')
   const [alertsList, setAlertsList] = useState<Array<{p: number, cond: string}>>([])
+
+  // AI/MCP Results states
+  const [aiAnalysis, setAIAnalysis] = useState<any>(null)
+  const [aiDebate, setAIDebate] = useState<any>(null)
+  const [aiRisk, setAIRisk] = useState<any>(null)
 
   const FX: Record<string, number> = {USD:1, NGN:1650, EUR:0.92, GBP:0.79}
   const UNIT: Record<string, number> = {oz:1, g:0.0321507, kg:32.1507, tola:0.374878}
@@ -258,6 +284,30 @@ export default function GoldTradingDashboard() {
     return () => clearInterval(interval)
   }, [fetchTimeframeData, timeframe])
 
+  // Switch active asset
+  const switchAsset = useCallback(async (sym: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/assets/switch?symbol=${sym}`, {
+        method: 'POST'
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.success) {
+          setAsset(sym)
+          // Update price immediately from response
+          if (data.price && data.price.close) {
+            setAssetPrices(prev => ({ ...prev, [sym]: data.price.close }))
+          }
+          // Refresh all data
+          fetchData()
+          fetchTimeframeData()
+        }
+      }
+    } catch (err) {
+      console.error('Failed to switch asset:', err)
+    }
+  }, [fetchData, fetchTimeframeData])
+
   // Close position handler
   const closePosition = async (ticket: number) => {
     try {
@@ -335,8 +385,8 @@ export default function GoldTradingDashboard() {
               <div className="flex items-center gap-3">
                 <div style={{width: '28px', height: '28px', borderRadius: '999px', border: '1px solid var(--border)', display: 'grid', placeItems: 'center', background: 'rgba(255,255,255,.03)', color: 'var(--muted)', fontSize: '14px'}}>×</div>
                 <div>
-                  <h1 className="text-lg font-bold">XAU/USD</h1>
-                  <p className="text-xs text-muted">XAUUSD · FX · {account?.account_type?.toUpperCase() || 'DEMO'}</p>
+                  <h1 className="text-lg font-bold">{asset === 'XAUUSD' ? 'XAU/USD (Gold)' : 'BTC/USD (Bitcoin)'}</h1>
+                  <p className="text-xs text-muted">{asset} · FX · {account?.account_type?.toUpperCase() || 'DEMO'}</p>
                 </div>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
@@ -395,6 +445,24 @@ export default function GoldTradingDashboard() {
                 padding: '10px 14px', borderBottom: '1px solid var(--border)', background: 'rgba(255,255,255,.01)'
             }}>
               <div className="flex gap-2">
+                {/* Asset Selector */}
+                {['XAUUSD', 'BTCUSD'].map((sym) => (
+                  <button
+                    key={sym}
+                    className={`chip ${asset === sym ? 'active' : ''}`}
+                    onClick={() => switchAsset(sym)}
+                    style={{
+                      background: asset === sym ? '#58d17a' : '#202227',
+                      color: asset === sym ? '#000' : '#d8dbe0',
+                      borderColor: asset === sym ? '#58d17a' : 'var(--border)',
+                      fontWeight: asset === sym ? 600 : 400
+                    }}
+                  >
+                    {sym === 'XAUUSD' ? 'Gold' : 'Bitcoin'}
+                  </button>
+                ))}
+                <div className="w-px bg-slate-700 mx-1" />
+                {/* Timeframe Selector */}
                 {['1M', '5M', '15M', '1H'].map((tf) => (
                   <button
                     key={tf}
@@ -411,7 +479,7 @@ export default function GoldTradingDashboard() {
                 ))}
                 <button className="icon-chip"><Activity size={14}/></button>
               </div>
-              <div className="text-xs text-faint">Perplexity Reference Design</div>
+              <div className="text-xs text-faint">Multi-Asset Trading</div>
             </div>
 
             <div className="chart-area flex flex-col gap-2 relative">
@@ -536,6 +604,230 @@ export default function GoldTradingDashboard() {
                     <span className="text-sm font-semibold text-muted tracking-wider" style={{textTransform: 'uppercase'}}>Margin Level</span>
                     <span className={`mono text-xl ${account?.margin_level && account.margin_level < 100 ? 'text-red' : 'text-green'}`}>{account?.margin_level?.toFixed(1) || '--'}%</span>
                  </div>
+              </div>
+           </div>
+
+           {/* AI Trading Intelligence Panel */}
+           <div className="panel">
+              <div className="panel-head">
+                 <div>
+                     <h2>AI Trading Intelligence</h2>
+                     <p>Multi-agent analysis & risk assessment</p>
+                 </div>
+              </div>
+              <div className="panel-body" style={{display: 'flex', flexDirection: 'column', gap: '12px'}}>
+                 {/* MCP Action Buttons */}
+                 <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px'}}>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const res = await fetch(`${API_BASE}/mcp/market-analysis`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              asset: asset,
+                              current_price: currentPrice,
+                              support: [currentPrice * 0.99, currentPrice * 0.98],
+                              resistance: [currentPrice * 1.01, currentPrice * 1.02],
+                              rsi: data?.indicators?.rsi_14,
+                              trend: data?.indicators?.trend?.toLowerCase() || 'neutral',
+                              price_change_24h: pctChange
+                            })
+                          })
+                          if (res.ok) {
+                            const result = await res.json()
+                            setAIAnalysis(result)
+                          }
+                        } catch (err) {
+                          console.error('AI Analysis failed:', err)
+                        }
+                      }}
+                      style={{
+                        height: '38px',
+                        borderRadius: '10px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        background: 'rgba(88,209,122,.15)',
+                        border: '1px solid rgba(88,209,122,.3)',
+                        color: '#58d17a',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Analyze Market
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const res = await fetch(`${API_BASE}/mcp/run-debate`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              asset: asset,
+                              current_price: currentPrice,
+                              rounds: 3
+                            })
+                          })
+                          if (res.ok) {
+                            const result = await res.json()
+                            setAIDebate(result)
+                          }
+                        } catch (err) {
+                          console.error('Debate failed:', err)
+                        }
+                      }}
+                      style={{
+                        height: '38px',
+                        borderRadius: '10px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        background: 'rgba(240,195,107,.15)',
+                        border: '1px solid rgba(240,195,107,.3)',
+                        color: '#f0c36b',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      Run Debate
+                    </button>
+                 </div>
+                 <button
+                   onClick={async () => {
+                     try {
+                       const res = await fetch(`${API_BASE}/mcp/check-risk`, {
+                         method: 'POST',
+                         headers: { 'Content-Type': 'application/json' },
+                         body: JSON.stringify({
+                           assets: [asset],
+                           portfolio_value: account?.equity || 10000
+                         })
+                       })
+                       if (res.ok) {
+                         const result = await res.json()
+                         setAIRisk(result)
+                       }
+                     } catch (err) {
+                       console.error('Risk check failed:', err)
+                     }
+                   }}
+                   style={{
+                     height: '38px',
+                     borderRadius: '10px',
+                     fontSize: '12px',
+                     fontWeight: 600,
+                     background: 'rgba(255,109,140,.15)',
+                     border: '1px solid rgba(255,109,140,.3)',
+                     color: '#ff6d8c',
+                     cursor: 'pointer'
+                   }}
+                 >
+                   Check Risk
+                 </button>
+
+                 {/* AI Analysis Results */}
+                 {aiAnalysis && aiAnalysis.success && (
+                   <div style={{marginTop: '8px', padding: '12px', borderRadius: '10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)'}}>
+                      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px'}}>
+                         <strong style={{fontSize: '12px', color: 'var(--text)'}}>Sentiment</strong>
+                         <span style={{
+                           fontSize: '11px',
+                           fontWeight: 600,
+                           padding: '2px 8px',
+                           borderRadius: '6px',
+                           background: aiAnalysis.sentiment === 'BULLISH' ? 'rgba(88,209,122,.2)' : aiAnalysis.sentiment === 'BEARISH' ? 'rgba(255,109,140,.2)' : 'rgba(162,169,179,.2)',
+                           color: aiAnalysis.sentiment === 'BULLISH' ? '#58d17a' : aiAnalysis.sentiment === 'BEARISH' ? '#ff6d8c' : '#a2a9b3'
+                         }}>
+                           {aiAnalysis.sentiment}
+                         </span>
+                      </div>
+                      <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '8px'}}>
+                         <span style={{fontSize: '11px', color: 'var(--muted)'}}>Confidence</span>
+                         <span style={{fontSize: '11px', color: 'var(--text)'}}>{Math.round(aiAnalysis.confidence * 100)}%</span>
+                      </div>
+                      {aiAnalysis.bullish_points?.length > 0 && (
+                        <div style={{marginBottom: '8px'}}>
+                           <span style={{fontSize: '10px', color: '#58d17a', textTransform: 'uppercase'}}>Bullish</span>
+                           <ul style={{margin: '4px 0 0 0', paddingLeft: '16px', fontSize: '11px', color: 'var(--muted)'}}>
+                              {aiAnalysis.bullish_points.slice(0, 2).map((p: string, i: number) => (
+                                <li key={i}>{p}</li>
+                              ))}
+                           </ul>
+                        </div>
+                      )}
+                      {aiAnalysis.bearish_points?.length > 0 && (
+                        <div>
+                           <span style={{fontSize: '10px', color: '#ff6d8c', textTransform: 'uppercase'}}>Bearish</span>
+                           <ul style={{margin: '4px 0 0 0', paddingLeft: '16px', fontSize: '11px', color: 'var(--muted)'}}>
+                              {aiAnalysis.bearish_points.slice(0, 2).map((p: string, i: number) => (
+                                <li key={i}>{p}</li>
+                              ))}
+                           </ul>
+                        </div>
+                      )}
+                   </div>
+                 )}
+
+                 {/* Debate Results */}
+                 {aiDebate && aiDebate.success && (
+                   <div style={{marginTop: '8px', padding: '12px', borderRadius: '10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)'}}>
+                      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px'}}>
+                         <strong style={{fontSize: '12px', color: 'var(--text)'}}>Debate Verdict</strong>
+                         <span style={{
+                           fontSize: '11px',
+                           fontWeight: 600,
+                           padding: '2px 8px',
+                           borderRadius: '6px',
+                           background: aiDebate.verdict?.includes('BULL') ? 'rgba(88,209,122,.2)' : aiDebate.verdict?.includes('BEAR') ? 'rgba(255,109,140,.2)' : 'rgba(162,169,179,.2)',
+                           color: aiDebate.verdict?.includes('BULL') ? '#58d17a' : aiDebate.verdict?.includes('BEAR') ? '#ff6d8c' : '#a2a9b3'
+                         }}>
+                           {aiDebate.verdict?.replace(/_/g, ' ')}
+                         </span>
+                      </div>
+                      <div style={{display: 'flex', gap: '8px'}}>
+                         <div style={{flex: 1, padding: '8px', borderRadius: '8px', background: 'rgba(88,209,122,.1)'}}>
+                            <span style={{fontSize: '10px', color: '#58d17a'}}>BULL WINS</span>
+                            <div style={{fontSize: '16px', fontWeight: 'bold', color: '#58d17a'}}>{aiDebate.bull_wins}</div>
+                         </div>
+                         <div style={{flex: 1, padding: '8px', borderRadius: '8px', background: 'rgba(255,109,140,.1)'}}>
+                            <span style={{fontSize: '10px', color: '#ff6d8c'}}>BEAR WINS</span>
+                            <div style={{fontSize: '16px', fontWeight: 'bold', color: '#ff6d8c'}}>{aiDebate.bear_wins}</div>
+                         </div>
+                      </div>
+                   </div>
+                 )}
+
+                 {/* Risk Results */}
+                 {aiRisk && aiRisk.success && (
+                   <div style={{marginTop: '8px', padding: '12px', borderRadius: '10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)'}}>
+                      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px'}}>
+                         <strong style={{fontSize: '12px', color: 'var(--text)'}}>Risk Level</strong>
+                         <span style={{
+                           fontSize: '11px',
+                           fontWeight: 600,
+                           padding: '2px 8px',
+                           borderRadius: '6px',
+                           background: aiRisk.risk_level === 'LOW' ? 'rgba(88,209,122,.2)' : aiRisk.risk_level === 'MEDIUM' ? 'rgba(240,195,107,.2)' : 'rgba(255,109,140,.2)',
+                           color: aiRisk.risk_level === 'LOW' ? '#58d17a' : aiRisk.risk_level === 'MEDIUM' ? '#f0c36b' : '#ff6d8c'
+                         }}>
+                           {aiRisk.risk_level}
+                         </span>
+                      </div>
+                      <div style={{marginBottom: '8px'}}>
+                         <div style={{fontSize: '10px', color: 'var(--muted)', marginBottom: '4px'}}>Risk Score</div>
+                         <div style={{height: '6px', borderRadius: '3px', background: 'rgba(255,255,255,0.1)', overflow: 'hidden'}}>
+                            <div style={{
+                              width: `${Math.round(aiRisk.risk_score * 100)}%`,
+                              height: '100%',
+                              background: aiRisk.risk_score < 0.3 ? '#58d17a' : aiRisk.risk_score < 0.6 ? '#f0c36b' : '#ff6d8c'
+                            }} />
+                         </div>
+                         <div style={{fontSize: '10px', color: 'var(--muted)', textAlign: 'right', marginTop: '2px'}}>{Math.round(aiRisk.risk_score * 100)}%</div>
+                      </div>
+                      {aiRisk.alerts && aiRisk.alerts.length > 0 && (
+                        <div style={{fontSize: '11px', color: '#ff6d8c'}}>
+                           ⚠️ {aiRisk.alerts.length} risk alert{aiRisk.alerts.length > 1 ? 's' : ''}
+                        </div>
+                      )}
+                   </div>
+                 )}
               </div>
            </div>
 

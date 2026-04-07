@@ -4,7 +4,7 @@ Provides polling endpoints for dashboard data
 """
 
 from typing import Optional, Dict, Any, List
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Body
 from pydantic import BaseModel
 
 try:
@@ -288,3 +288,162 @@ async def get_trade_history():
         raise HTTPException(status_code=503, detail="Trading service not initialized")
 
     return trading_service.get_trade_history()
+
+
+@router.get("/assets")
+async def get_assets():
+    """Get available assets and their current prices"""
+    if trading_service is None:
+        raise HTTPException(status_code=503, detail="Trading service not initialized")
+
+    adapter = trading_service.adapter
+
+    # Check if multi-asset adapter
+    if hasattr(adapter, 'get_asset_prices'):
+        prices = await adapter.get_asset_prices()
+        return {
+            "assets": list(prices.keys()),
+            "prices": prices,
+            "active": getattr(adapter, 'active_asset', 'XAUUSD')
+        }
+
+    # Single asset fallback
+    price_data = await adapter.get_price()
+    return {
+        "assets": ["XAUUSD"],
+        "prices": {"XAUUSD": price_data.close} if price_data else {},
+        "active": "XAUUSD"
+    }
+
+
+@router.post("/assets/switch")
+async def switch_asset(symbol: str):
+    """Switch active trading asset (for multi-asset mode)"""
+    if trading_service is None:
+        raise HTTPException(status_code=503, detail="Trading service not initialized")
+
+    adapter = trading_service.adapter
+
+    if hasattr(adapter, 'set_active_asset'):
+        adapter.set_active_asset(symbol)
+        # Immediately fetch price for new asset
+        price_data = await adapter.get_price(symbol)
+        return {
+            "success": True,
+            "active_asset": symbol,
+            "price": {
+                "symbol": price_data.symbol if price_data else symbol,
+                "close": price_data.close if price_data else None,
+                "bid": price_data.close if price_data else None,
+                "ask": price_data.close if price_data else None
+            } if price_data else None
+        }
+
+    return {"success": False, "message": "Multi-asset mode not enabled"}
+
+
+# MCP Request Models - using Dict for flexibility
+class TradeAnalysisRequest(BaseModel):
+    asset: str
+    entry: float
+    stop: float
+    target: float
+    account: float = 10000.0
+    risk_percent: float = 1.0
+
+
+class MarketAnalysisRequest(BaseModel):
+    asset: str
+    current_price: float
+    support: List[float]
+    resistance: List[float]
+    rsi: Optional[float] = None
+    trend: str = "neutral"
+    price_change_24h: float = 0.0
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "asset": "XAUUSD",
+                "current_price": 4640.0,
+                "support": [4620, 4600],
+                "resistance": [4660, 4680],
+                "rsi": 55,
+                "trend": "neutral",
+                "price_change_24h": 0.45
+            }
+        }
+
+
+class DebateRequest(BaseModel):
+    asset: str
+    current_price: float
+    rounds: int = 3
+
+
+class OrderCheckRequest(BaseModel):
+    asset: str
+    entry: float
+    stop: float
+    risk_percent: float = 1.0
+
+
+class RiskCheckRequest(BaseModel):
+    assets: List[str]
+    portfolio_value: float
+
+
+# Import MCP skill tools
+import sys
+sys.path.insert(0, '/Users/hitler/Projects/gold-trading-agent/skills/gold-api-feed/scripts')
+from mcp_server import handle_mcp_request
+
+
+@router.post("/mcp/analyze-trade")
+async def mcp_analyze_trade(request: Dict[str, Any] = Body(...)):
+    """MCP tool: Analyze trade setup"""
+    mcp_request = {
+        "tool": "analyze_trade_setup",
+        "params": request
+    }
+    return handle_mcp_request(mcp_request)
+
+
+@router.post("/mcp/market-analysis")
+async def mcp_market_analysis(request: Dict[str, Any] = Body(...)):
+    """MCP tool: Multi-agent market analysis"""
+    mcp_request = {
+        "tool": "market_analysis",
+        "params": request
+    }
+    return handle_mcp_request(mcp_request)
+
+
+@router.post("/mcp/run-debate")
+async def mcp_run_debate(request: Dict[str, Any] = Body(...)):
+    """MCP tool: Run bull/bear debate"""
+    mcp_request = {
+        "tool": "run_debate",
+        "params": request
+    }
+    return handle_mcp_request(mcp_request)
+
+
+@router.post("/mcp/check-order")
+async def mcp_check_order(request: Dict[str, Any] = Body(...)):
+    """MCP tool: Check order eligibility"""
+    mcp_request = {
+        "tool": "check_order",
+        "params": request
+    }
+    return handle_mcp_request(mcp_request)
+
+
+@router.post("/mcp/check-risk")
+async def mcp_check_risk(request: Dict[str, Any] = Body(...)):
+    """MCP tool: Risk assessment"""
+    mcp_request = {
+        "tool": "check_risk",
+        "params": request
+    }
+    return handle_mcp_request(mcp_request)

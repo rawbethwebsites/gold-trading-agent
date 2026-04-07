@@ -32,6 +32,10 @@ class TwelveDataAdapter(TradingAdapter):
         self._active_source = "12Data"
         self._first_fetch = True  # Allow first price to set baseline
 
+        # Gold-api.com cache (60 seconds to prevent IP blocking)
+        self._gold_api_cache: Dict[str, tuple] = {}  # symbol -> (timestamp, price_data)
+        self._gold_api_cache_duration = 60  # 1 minute cache as per API docs
+
     @property
     def active_source(self) -> str:
         """Return the current active data source name"""
@@ -143,10 +147,86 @@ class TwelveDataAdapter(TradingAdapter):
         """Disconnect"""
         self._connected = False
 
+    async def _fetch_gold_api(self, symbol: str) -> Optional[PriceData]:
+        """Fetch price from gold-api.com with 60-second caching to prevent IP blocking"""
+        now = datetime.now()
+
+        # Check cache first (60-second TTL as per API docs)
+        if symbol in self._gold_api_cache:
+            cached_time, cached_data = self._gold_api_cache[symbol]
+            age_seconds = (now - cached_time).total_seconds()
+            if age_seconds < self._gold_api_cache_duration:
+                # Return cached data with updated timestamp
+                return PriceData(
+                    timestamp=now,
+                    open=cached_data.open,
+                    high=cached_data.high,
+                    low=cached_data.low,
+                    close=cached_data.close,
+                    volume=cached_data.volume,
+                    symbol=symbol
+                )
+
+        # Cache miss or expired - fetch from API
+        symbol_map = {
+            "XAUUSD": "XAU",
+            "BTCUSD": "BTC",
+            "XAGUSD": "XAG",
+            "ETHUSD": "ETH"
+        }
+        api_symbol = symbol_map.get(symbol, symbol.replace("USD", ""))
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                url = f"https://api.gold-api.com/price/{api_symbol}"
+                async with session.get(url, timeout=10) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        price = float(data.get("price", 0))
+                        if price > 0:
+                            self._active_source = "gold-api.com"
+                            price_data = PriceData(
+                                timestamp=now,
+                                open=price,
+                                high=price,
+                                low=price,
+                                close=price,
+                                volume=0,
+                                symbol=symbol
+                            )
+                            # Store in cache
+                            self._gold_api_cache[symbol] = (now, price_data)
+                            return price_data
+        except Exception as e:
+            print(f"gold-api.com error: {e}")
+
+        # Return stale cache if API fails (better than nothing)
+        if symbol in self._gold_api_cache:
+            _, cached_data = self._gold_api_cache[symbol]
+            return PriceData(
+                timestamp=now,
+                open=cached_data.open,
+                high=cached_data.high,
+                low=cached_data.low,
+                close=cached_data.close,
+                volume=cached_data.volume,
+                symbol=symbol
+            )
+        return None
+
     async def get_price(self, symbol: str = "XAUUSD") -> Optional[PriceData]:
-        """Get current gold price from Twelve Data"""
+        """Get current price for symbol (XAUUSD or BTCUSD)"""
         if not self.is_connected():
             return None
+
+        # Try gold-api.com first (free, no auth, no rate limits)
+        price = await self._fetch_gold_api(symbol)
+        if price:
+            return price
+
+        # BTCUSD always uses fallback APIs (Twelve Data free tier doesn't include crypto)
+        if symbol == "BTCUSD":
+            return await self._run_bitcoin_fallback()
 
         # If API calls disabled, run the fallback API race instead of twelve data
         if not self._api_calls_enabled:
@@ -203,6 +283,84 @@ class TwelveDataAdapter(TradingAdapter):
 
         # API failed, fall back to fallback APIs
         return await self._run_fallback_race()
+
+    async def _run_bitcoin_fallback(self) -> Optional[PriceData]:
+        """Fetch Bitcoin price from public APIs - CoinGecko is most reliable"""
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+            "Accept": "application/json"
+        }
+        async with aiohttp.ClientSession(headers=headers) as session:
+            try:
+                # Try CoinGecko first (most reliable)
+                async with session.get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd", timeout=10) as r:
+                    if r.status == 200:
+                        data = await r.json()
+                        price = float(data.get("bitcoin", {}).get("usd", 0))
+                        if price > 0:
+                            self._active_source = "CoinGecko"
+                            return PriceData(
+                                timestamp=datetime.now(),
+                                open=price,
+                                high=price,
+                                low=price,
+                                close=price,
+                                volume=0,
+                                symbol="BTCUSD"
+                            )
+            except Exception:
+                pass
+
+            try:
+                # Try CoinPaprika as fallback
+                async with session.get("https://api.coinpaprika.com/v1/tickers/btc-bitcoin", timeout=10) as r:
+                    if r.status == 200:
+                        data = await r.json()
+                        price = float(data.get("quotes", {}).get("USD", {}).get("price", 0))
+                        if price > 0:
+                            self._active_source = "CoinPaprika"
+                            return PriceData(
+                                timestamp=datetime.now(),
+                                open=price,
+                                high=price,
+                                low=price,
+                                close=price,
+                                volume=0,
+                                symbol="BTCUSD"
+                            )
+            except Exception:
+                pass
+
+            try:
+                # Try Blockchain.com as last resort
+                async with session.get("https://api.blockchain.com/v3/exchange/tickers/BTC-USD", timeout=10) as r:
+                    if r.status == 200:
+                        data = await r.json()
+                        price = float(data.get("last_trade_price", 0))
+                        if price > 0:
+                            self._active_source = "Blockchain.com"
+                            return PriceData(
+                                timestamp=datetime.now(),
+                                open=price,
+                                high=price,
+                                low=price,
+                                close=price,
+                                volume=0,
+                                symbol="BTCUSD"
+                            )
+            except Exception:
+                pass
+
+        # Return cached/default
+        return PriceData(
+            timestamp=datetime.now(),
+            open=68000.0,
+            high=68000.0,
+            low=68000.0,
+            close=68000.0,
+            volume=0,
+            symbol="BTCUSD"
+        )
 
     async def _fetch_source(self, name: str, session: aiohttp.ClientSession) -> tuple:
         """Fetch gold price from public APIs - follows HTML pattern: metals.live > goldprice.org > crypto tokens"""

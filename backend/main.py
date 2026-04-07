@@ -49,6 +49,16 @@ def get_adapter():
             symbol=config.mt5.symbol,
             api_keys=config.twelve_data.api_keys
         )
+    elif provider == "multi_asset":
+        logger.info("Using Multi-Asset Adapter (Gold + Bitcoin)")
+        logger.info("✨ Trade both XAU/USD and BTC/USD!")
+        from adapters.multi_asset_adapter import MultiAssetAdapter
+        assets = config.app.assets.split(",") if config.app.assets else ["XAUUSD", "BTCUSD"]
+        return MultiAssetAdapter(
+            initial_balance=config.account.initial_balance,
+            assets=assets,
+            api_keys=config.twelve_data.api_keys
+        )
     else:
         logger.info("Using MT5 Adapter (local terminal + real broker)")
         from adapters.mt5_adapter import MT5Adapter
