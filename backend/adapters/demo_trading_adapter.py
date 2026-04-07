@@ -11,7 +11,7 @@ from typing import Optional, List, Dict, Any
 from dataclasses import dataclass, field
 
 from . import TradingAdapter, PriceData, AccountInfo, Position
-from .twelve_data_adapter import TwelveDataAdapter
+from .public_api_adapter import PublicApiAdapter
 
 
 @dataclass
@@ -48,8 +48,8 @@ class DemoTradingAdapter(TradingAdapter):
     """
 
     def __init__(self, initial_balance: float = 10000.0, symbol: str = "XAUUSD", api_keys: list = None):
-        # Price data provider (Twelve Data with fallbacks)
-        self._price_adapter = TwelveDataAdapter(
+        # Price data provider (Public APIs with fallbacks)
+        self._price_adapter = PublicApiAdapter(
             api_keys=api_keys or [],
             api_calls_enabled=True
         )

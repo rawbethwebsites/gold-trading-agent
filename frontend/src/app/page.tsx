@@ -11,7 +11,7 @@ import {
   ResponsiveContainer,
   ComposedChart,
   ReferenceLine,
-  Scatter
+  Legend
 } from 'recharts'
 import { Activity, Bell, AlertTriangle, ChevronDown, ChevronUp, Settings } from 'lucide-react'
 
@@ -92,7 +92,7 @@ interface DashboardData {
 // Asset configurations with realistic base prices
 const ASSET_CONFIG: Record<string, { basePrice: number; tickSize: number; pipValue: number; name: string; contractSize: number }> = {
   XAUUSD: { basePrice: 4650, tickSize: 0.01, pipValue: 0.01, name: 'Gold', contractSize: 100 },
-  BTCUSD: { basePrice: 83000, tickSize: 0.1, pipValue: 0.01, name: 'Bitcoin', contractSize: 1 }
+  BTCUSD: { basePrice: 68273, tickSize: 0.1, pipValue: 0.01, name: 'Bitcoin', contractSize: 1 }
 }
 
 // Calculate EMA
@@ -108,8 +108,9 @@ function calculateEMA(prices: number[], period: number): number {
 
 // Generate realistic price movement
 function generateNextTick(currentPrice: number, volatility: number, tickSize: number): number {
-  const maxMove = tickSize * volatility * (Math.random() * 2 + 1) // Random factor 1-3
-  const move = (Math.random() - 0.5) * maxMove
+  // Fixed volatility range: ±2.0 to ±4.0 per tick (scaled by volatility parameter)
+  const baseMove = 2.0 + Math.random() * 2.0 // 2.0 to 4.0
+  const move = (Math.random() > 0.5 ? 1 : -1) * baseMove * (volatility / 10)
   return Math.max(currentPrice + move, tickSize)
 }
 
@@ -117,6 +118,7 @@ export default function GoldTradingDashboard() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [lastPriceUpdate, setLastPriceUpdate] = useState<Date | null>(null)
 
   // Custom states
   const [isLive, setIsLive] = useState(true)
@@ -174,6 +176,38 @@ export default function GoldTradingDashboard() {
   const [aiAnalysis, setAIAnalysis] = useState<any>(null)
   const [aiDebate, setAIDebate] = useState<any>(null)
   const [aiRisk, setAIRisk] = useState<any>(null)
+
+  // Chat state with localStorage persistence
+  const [chatMessages, setChatMessages] = useState<Array<{role: 'user' | 'assistant', content: string, timestamp: Date}>>([])
+  const [chatInput, setChatInput] = useState('')
+  const [isTyping, setIsTyping] = useState(false)
+  const [showChat, setShowChat] = useState(true)
+  const chatEndRef = useRef<HTMLDivElement>(null)
+
+  // Load chat history from localStorage on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('tradingAgentChat')
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved)
+        // Convert timestamp strings back to Date objects
+        const restored = parsed.map((m: any) => ({
+          ...m,
+          timestamp: new Date(m.timestamp)
+        }))
+        setChatMessages(restored)
+      } catch (e) {
+        console.error('Failed to restore chat:', e)
+      }
+    }
+  }, [])
+
+  // Save chat history to localStorage whenever it changes
+  useEffect(() => {
+    if (chatMessages.length > 0) {
+      localStorage.setItem('tradingAgentChat', JSON.stringify(chatMessages))
+    }
+  }, [chatMessages])
 
   const FX: Record<string, number> = {USD:1, NGN:1650, EUR:0.92, GBP:0.79}
   const UNIT: Record<string, number> = {oz:1, g:0.0321507, kg:32.1507, tola:0.374878}
@@ -312,6 +346,100 @@ export default function GoldTradingDashboard() {
      }
   }
 
+  // Auto-scroll chat to bottom (only within chat container, not page)
+  useEffect(() => {
+    const chatContainer = document.getElementById('chat-messages-container')
+    if (chatContainer) {
+      chatContainer.scrollTop = chatContainer.scrollHeight
+    }
+  }, [chatMessages, isTyping])
+
+  // Send message to AI agent with trading context
+  const handleSendMessage = async (directMessage?: string) => {
+    const messageToSend = directMessage || chatInput
+    if (!messageToSend.trim() || isTyping) return
+
+    const userMessage = messageToSend.trim()
+    setChatInput('')
+    setChatMessages(prev => [...prev, {
+      role: 'user',
+      content: userMessage,
+      timestamp: new Date()
+    }])
+    setIsTyping(true)
+
+    try {
+      // Build trading context from current dashboard state
+      const context = {
+        asset: asset,
+        assetName: ASSET_CONFIG[asset].name,
+        currentPrice: displayPrice,
+        signal: data?.signal?.type || 'HOLD',
+        signalConfidence: data?.signal?.confidence || 0,
+        signalReason: data?.signal?.reasons?.[0] || 'No signal',
+        trend: data?.indicators?.trend || 'NEUTRAL',
+        ema9: data?.indicators?.ema_9 || currentTick?.ema_9,
+        ema21: data?.indicators?.ema_21 || currentTick?.ema_21,
+        macdHist: data?.indicators?.macd_histogram,
+        atr14: data?.indicators?.atr_14,
+        bbUpper: data?.indicators?.bb_upper,
+        bbLower: data?.indicators?.bb_lower,
+        rsi14: data?.indicators?.rsi_14,
+        lastAnalysis: aiAnalysis?.success ? {
+          sentiment: aiAnalysis.sentiment,
+          confidence: aiAnalysis.confidence,
+          bullishPoints: aiAnalysis.bullish_points?.slice(0, 2),
+          bearishPoints: aiAnalysis.bearish_points?.slice(0, 2)
+        } : null,
+        lastDebate: aiDebate?.success ? {
+          verdict: aiDebate.verdict,
+          bullWins: aiDebate.bull_wins,
+          bearWins: aiDebate.bear_wins
+        } : null,
+        lastRisk: aiRisk?.success ? {
+          riskLevel: aiRisk.risk_level,
+          riskScore: aiRisk.risk_score
+        } : null,
+        controls: {
+          lotSize: lotSize,
+          riskPercent: riskPercent,
+          accountBalance: accountBalance,
+          positionValue: positionValue,
+          riskAmount: riskAmount
+        }
+      }
+
+      const res = await fetch(`${API_BASE}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: userMessage,
+          context: context,
+          history: chatMessages.slice(-10).map(m => ({ role: m.role, content: m.content }))
+        })
+      })
+
+      if (!res.ok) throw new Error('Failed to get response')
+
+      const result = await res.json()
+
+      setChatMessages(prev => [...prev, {
+        role: 'assistant',
+        content: result.response || result.error || 'I apologize, I could not process your request.',
+        timestamp: new Date()
+      }])
+    } catch (err) {
+      console.error('Chat error:', err)
+      setChatMessages(prev => [...prev, {
+        role: 'assistant',
+        content: 'Sorry, I encountered an error. Please check that the backend is running.',
+        timestamp: new Date()
+      }])
+    } finally {
+      setIsTyping(false)
+    }
+  }
+
   // Fetch historical rates for selected timeframe - disabled in favor of simulation
   const fetchTimeframeData = useCallback(async () => {
     // Simulation generates its own data, no need to fetch from backend
@@ -330,9 +458,11 @@ export default function GoldTradingDashboard() {
       }
       const dashboardData = await response.json()
 
-      // Backend data is received but simulation generates its own prices
-      // Only use backend data for account/positions, not for price simulation
+      // Update data and track when price was last updated
       setData(dashboardData)
+      if (dashboardData?.price?.close) {
+        setLastPriceUpdate(new Date())
+      }
       setError(null)
     } catch (err) {
       setError('Cannot connect to backend. Is it running on port 8000?')
@@ -420,8 +550,8 @@ export default function GoldTradingDashboard() {
   const account = data?.account
   const positions = data?.positions || []
 
-  // Use simulated price if live, otherwise use backend data
-  const displayPrice = currentTick?.price || price?.close || basePrice
+  // Use REAL backend price (not simulated) - simulation visual only
+  const displayPrice = price?.close || currentTick?.price || basePrice
   const lastClose = historicalData.length > 1 ? historicalData[historicalData.length - 2]?.price : displayPrice
   const change = displayPrice - lastClose
   const pctChange = lastClose ? (change / lastClose) * 100 : 0
@@ -490,15 +620,26 @@ export default function GoldTradingDashboard() {
               <div className="headline-box" style={{padding: '14px 16px', minHeight: '80px', borderRight: '1px solid var(--border)'}}>
                 <div className="price-line" style={{display: 'flex', gap: '8px', alignItems: 'baseline'}}>
                   <div className="price mono" style={{fontSize: '31px', letterSpacing: '-0.03em'}}>
-                    {displayPrice > 0 ? displayPrice.toLocaleString(undefined, {minimumFractionDigits: ASSET_CONFIG[asset].tickSize < 0.1 ? 2 : 0, maximumFractionDigits: ASSET_CONFIG[asset].tickSize < 0.1 ? 2 : 0}) : '--'}
+                    {displayPrice > 0 ? displayPrice.toLocaleString(undefined, {minimumFractionDigits: 3, maximumFractionDigits: 3}) : '--'}
                   </div>
                   <div className={`move ${isUp ? 'text-green' : 'text-red'}`} style={{fontSize: '14px', fontWeight: 600}}>
                     {change > 0 ? '+' : ''}{change.toFixed(2)} {isUp ? '↗' : '↘'} {Math.abs(pctChange).toFixed(2)}%
                   </div>
                 </div>
-                <div className="stamp text-muted text-xs mt-1">
-                   {isLive ? `Live Tick Data: ${new Date().toLocaleTimeString()}` : 'Data Fetching Paused'}
-                   {currentTick && <span className="ml-2" style={{color: '#58d17a', animation: 'pulse 1s infinite'}}>●</span>}
+                <div className="stamp text-muted text-xs mt-1" style={{display: 'flex', alignItems: 'center', gap: '6px'}}>
+                   {isLive ? (
+                     <>
+                       Live Price
+                       {lastPriceUpdate && (
+                         <span style={{color: 'var(--faint)', fontSize: '10px'}}>
+                           · Updated {lastPriceUpdate.toLocaleTimeString()}
+                         </span>
+                       )}
+                       <span className="ml-1" style={{color: '#58d17a', animation: 'pulse 1.5s infinite'}}>●</span>
+                     </>
+                   ) : (
+                     'Data Fetching Paused'
+                   )}
                 </div>
               </div>
               <div className="headline-box" style={{padding: '14px 16px', minHeight: '80px'}}>
@@ -566,34 +707,71 @@ export default function GoldTradingDashboard() {
                  <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={historicalData}>
                       <CartesianGrid stroke="rgba(255,255,255,0.04)" vertical={false} />
-                      <XAxis dataKey="timestamp" stroke="#767b84" tick={{fontSize: 11}} axisLine={false} tickLine={false} minTickGap={30} />
-                      <YAxis domain={['auto', 'auto']} stroke="#767b84" tick={{fontSize: 11}} axisLine={false} tickLine={false} tickFormatter={(v)=>v.toFixed(ASSET_CONFIG[asset].tickSize < 0.1 ? 1 : 0)} orientation="right" />
+                      <XAxis xAxisId="time" dataKey="timestamp" stroke="#767b84" tick={{fontSize: 11}} axisLine={false} tickLine={false} minTickGap={30} />
+                      <YAxis
+                        yAxisId="price"
+                        domain={[
+                          (dataMin) => Math.floor((dataMin - dataMin * 0.0003) * 100) / 100,
+                          (dataMax) => Math.ceil((dataMax + dataMax * 0.0003) * 100) / 100
+                        ]}
+                        stroke="#767b84"
+                        tick={{fontSize: 11}}
+                        axisLine={false}
+                        tickLine={false}
+                        tickFormatter={(v) => typeof v === 'number' ? v.toFixed(3) : v}
+                        orientation="right"
+                        width={70}
+                      />
                       <Tooltip
+                        yAxisId="price"
                         contentStyle={{ backgroundColor: '#1f1f20', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', color: '#fff', fontSize: '13px' }}
                         itemStyle={{ fontFamily: 'var(--font-mono)' }}
+                        labelStyle={{ color: '#a2a9b3' }}
+                        formatter={(value: any, name: string) => [typeof value === 'number' ? value.toFixed(2) : value, name]}
                       />
-                      <Line type="monotone" dataKey="price" stroke="#f0c36b" dot={false} strokeWidth={2} isAnimationActive={false} />
-                      <Line type="monotone" dataKey="ema_9" stroke="#58d17a" dot={false} strokeWidth={1} strokeDasharray="4 4" isAnimationActive={false} />
-                      <Line type="monotone" dataKey="ema_21" stroke="#3b82f6" dot={false} strokeWidth={1} strokeDasharray="4 4" isAnimationActive={false} />
-                      {/* Current price dot */}
-                      {historicalData.length > 0 && (
-                        <Scatter
-                          data={[historicalData[historicalData.length - 1]]}
-                          fill="#f0c36b"
-                          shape={(props: any) => {
-                            const { cx, cy } = props;
-                            return (
-                              <g>
-                                <circle cx={cx} cy={cy} r={6} fill="#f0c36b" opacity={0.3}>
-                                  <animate attributeName="r" values="6;10;6" dur="1s" repeatCount="indefinite" />
-                                  <animate attributeName="opacity" values="0.3;0;0.3" dur="1s" repeatCount="indefinite" />
-                                </circle>
-                                <circle cx={cx} cy={cy} r={4} fill="#f0c36b" />
-                              </g>
-                            );
-                          }}
-                        />
-                      )}
+                      <Legend
+                        wrapperStyle={{ paddingTop: '10px' }}
+                        iconType="line"
+                        formatter={(value: string) => <span style={{ color: '#a2a9b3', fontSize: '12px' }}>{value}</span>}
+                      />
+                      <Line
+                        name="Price"
+                        xAxisId="time"
+                        yAxisId="price"
+                        type="monotone"
+                        dataKey="price"
+                        stroke="#f0c36b"
+                        strokeWidth={2}
+                        dot={false}
+                        isAnimationActive={false}
+                        connectNulls={false}
+                      />
+                      <Line
+                        name="EMA 9"
+                        xAxisId="time"
+                        yAxisId="price"
+                        type="monotone"
+                        dataKey="ema_9"
+                        stroke="#58d17a"
+                        strokeWidth={1.5}
+                        strokeDasharray="4 4"
+                        dot={false}
+                        isAnimationActive={false}
+                        connectNulls={false}
+                      />
+                      <Line
+                        name="EMA 21"
+                        xAxisId="time"
+                        yAxisId="price"
+                        type="monotone"
+                        dataKey="ema_21"
+                        stroke="#3b82f6"
+                        strokeWidth={1.5}
+                        strokeDasharray="4 4"
+                        dot={false}
+                        isAnimationActive={false}
+                        connectNulls={false}
+                      />
                     </ComposedChart>
                  </ResponsiveContainer>
                  {/* Live indicator overlay */}
@@ -612,7 +790,7 @@ export default function GoldTradingDashboard() {
                      gap: '6px'
                    }}>
                      <span style={{width: '8px', height: '8px', background: '#58d17a', borderRadius: '50%', animation: 'pulse 1s infinite'}}></span>
-                     LIVE {currentTick.price.toLocaleString(undefined, {maximumFractionDigits: ASSET_CONFIG[asset].tickSize < 0.1 ? 2 : 0})}
+                     LIVE {currentTick.price.toLocaleString(undefined, {minimumFractionDigits: 3, maximumFractionDigits: 3})}
                    </div>
                  )}
                </div>
@@ -620,23 +798,25 @@ export default function GoldTradingDashboard() {
                <div style={{height: '100px', width: '100%', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '10px'}}>
                  <ResponsiveContainer width="100%" height="100%">
                    <ComposedChart data={historicalData}>
-                     <YAxis domain={[0, 100]} hide />
+                     <XAxis xAxisId="time" dataKey="timestamp" hide />
+                     <YAxis yAxisId="rsi" domain={[0, 100]} hide />
                      <Tooltip
+                        yAxisId="rsi"
                         contentStyle={{ backgroundColor: '#1f1f20', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', color: '#fff', fontSize: '13px' }}
                         itemStyle={{ fontFamily: 'var(--font-mono)' }}
                      />
-                     <ReferenceLine y={70} stroke="rgba(255,109,140,0.5)" strokeDasharray="3 3" />
-                     <ReferenceLine y={30} stroke="rgba(88,209,122,0.5)" strokeDasharray="3 3" />
-                     <Line type="monotone" dataKey="rsi_14" stroke="#a2a9b3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
+                     <ReferenceLine xAxisId="time" yAxisId="rsi" y={70} stroke="rgba(255,109,140,0.5)" strokeDasharray="3 3" />
+                     <ReferenceLine xAxisId="time" yAxisId="rsi" y={30} stroke="rgba(88,209,122,0.5)" strokeDasharray="3 3" />
+                     <Line xAxisId="time" yAxisId="rsi" type="monotone" dataKey="rsi_14" stroke="#a2a9b3" dot={false} strokeWidth={1.5} isAnimationActive={false} />
                    </ComposedChart>
                  </ResponsiveContainer>
                </div>
             </div>
 
             <div className="stats-row" style={{display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', borderTop: '1px solid var(--border)'}}>
-                <div className="stat" style={{padding: '14px 16px', borderRight: '1px solid var(--border)'}}><div className="stat-label" style={{fontSize: '12px', color: 'var(--muted)', marginBottom: '6px'}}>Prev Close</div><div className="stat-value mono" style={{fontSize: '18px', letterSpacing: '-0.02em'}}>{lastClose.toLocaleString(undefined, {minimumFractionDigits: ASSET_CONFIG[asset].tickSize < 0.1 ? 2 : 0, maximumFractionDigits: ASSET_CONFIG[asset].tickSize < 0.1 ? 2 : 0})}</div></div>
-                <div className="stat" style={{padding: '14px 16px', borderRight: '1px solid var(--border)'}}><div className="stat-label" style={{fontSize: '12px', color: 'var(--muted)', marginBottom: '6px'}}>Open</div><div className="stat-value mono" style={{fontSize: '18px', letterSpacing: '-0.02em'}}>{historicalData[0]?.price?.toLocaleString(undefined, {minimumFractionDigits: ASSET_CONFIG[asset].tickSize < 0.1 ? 2 : 0, maximumFractionDigits: ASSET_CONFIG[asset].tickSize < 0.1 ? 2 : 0}) || '--'}</div></div>
-                <div className="stat" style={{padding: '14px 16px', borderRight: '1px solid var(--border)'}}><div className="stat-label" style={{fontSize: '12px', color: 'var(--muted)', marginBottom: '6px'}}>Day Range</div><div className="stat-value mono text-sm flex items-center h-full">{historicalData.length > 0 ? Math.min(...historicalData.map(d => d.price)).toLocaleString(undefined, {minimumFractionDigits: ASSET_CONFIG[asset].tickSize < 0.1 ? 2 : 0}) : '--'} — {historicalData.length > 0 ? Math.max(...historicalData.map(d => d.price)).toLocaleString(undefined, {minimumFractionDigits: ASSET_CONFIG[asset].tickSize < 0.1 ? 2 : 0}) : '--'}</div></div>
+                <div className="stat" style={{padding: '14px 16px', borderRight: '1px solid var(--border)'}}><div className="stat-label" style={{fontSize: '12px', color: 'var(--muted)', marginBottom: '6px'}}>Prev Close</div><div className="stat-value mono" style={{fontSize: '18px', letterSpacing: '-0.02em'}}>{lastClose.toLocaleString(undefined, {minimumFractionDigits: 3, maximumFractionDigits: 3})}</div></div>
+                <div className="stat" style={{padding: '14px 16px', borderRight: '1px solid var(--border)'}}><div className="stat-label" style={{fontSize: '12px', color: 'var(--muted)', marginBottom: '6px'}}>Open</div><div className="stat-value mono" style={{fontSize: '18px', letterSpacing: '-0.02em'}}>{historicalData[0]?.price?.toLocaleString(undefined, {minimumFractionDigits: 3, maximumFractionDigits: 3}) || '--'}</div></div>
+                <div className="stat" style={{padding: '14px 16px', borderRight: '1px solid var(--border)'}}><div className="stat-label" style={{fontSize: '12px', color: 'var(--muted)', marginBottom: '6px'}}>Day Range</div><div className="stat-value mono text-sm flex items-center h-full">{historicalData.length > 0 ? Math.min(...historicalData.map(d => d.price)).toLocaleString(undefined, {minimumFractionDigits: 3, maximumFractionDigits: 3}) : '--'} — {historicalData.length > 0 ? Math.max(...historicalData.map(d => d.price)).toLocaleString(undefined, {minimumFractionDigits: 3, maximumFractionDigits: 3}) : '--'}</div></div>
                 <div className="stat" style={{padding: '14px 16px', borderRight: '1px solid var(--border)'}}><div className="stat-label" style={{fontSize: '12px', color: 'var(--muted)', marginBottom: '6px'}}>Volume</div><div className="stat-value mono" style={{fontSize: '18px', letterSpacing: '-0.02em'}}>{Math.floor(Math.random() * 10000 + 5000).toLocaleString()}</div></div>
                 <div className="stat" style={{padding: '14px 16px'}}><div className="stat-label" style={{fontSize: '12px', color: 'var(--muted)', marginBottom: '6px'}}>Spread</div><div className="stat-value mono" style={{fontSize: '18px', letterSpacing: '-0.02em'}}>{ASSET_CONFIG[asset].tickSize.toFixed(ASSET_CONFIG[asset].tickSize < 0.1 ? 2 : 1)}</div></div>
             </div>
@@ -768,7 +948,7 @@ export default function GoldTradingDashboard() {
                   <div style={{marginBottom: '12px', padding: '8px', background: 'rgba(59,130,246,0.1)', borderRadius: '6px'}}>
                     <div style={{fontSize: '10px', color: '#3b82f6'}}>Position Value</div>
                     <div style={{fontSize: '16px', fontWeight: 'bold', color: '#fff', fontFamily: 'var(--font-mono)'}}>${positionValue.toLocaleString(undefined, {maximumFractionDigits: 0})}</div>
-                    <div style={{fontSize: '10px', color: 'var(--muted)'}}>{lotSize} lots @ {displayPrice.toLocaleString(undefined, {maximumFractionDigits: ASSET_CONFIG[asset].tickSize < 0.1 ? 2 : 0})}</div>
+                    <div style={{fontSize: '10px', color: 'var(--muted)'}}>{lotSize} lots @ {displayPrice.toLocaleString(undefined, {minimumFractionDigits: 3, maximumFractionDigits: 3})}</div>
                   </div>
 
                   <div style={{marginBottom: '12px', padding: '8px', background: 'rgba(255,109,140,0.1)', borderRadius: '6px'}}>
@@ -835,155 +1015,505 @@ export default function GoldTradingDashboard() {
 
         {/* Right Column: Account Status & Utilities */}
         <div style={{display: 'flex', flexDirection: 'column', gap: '20px'}}>
-           
-           {/* Account Stats Panel */}
-           <div className="panel">
-              <div className="panel-head">
-                 <div>
-                     <h2>Account Status</h2>
-                     <p>{account?.account_type ? account.account_type.toUpperCase() : 'Loading...'}</p>
-                 </div>
-              </div>
-              <div className="panel-body" style={{display: 'flex', flexDirection: 'column', gap: '16px'}}>
-                 <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '8px', borderBottom: '1px solid var(--grid)'}}>
-                    <span className="text-sm font-semibold text-muted tracking-wider" style={{textTransform: 'uppercase'}}>Balance</span>
-                    <span className="mono text-2xl text-text">${account?.balance?.toFixed(2) || '--'}</span>
-                 </div>
-                 <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '8px', borderBottom: '1px solid var(--grid)'}}>
-                    <span className="text-sm font-semibold text-muted tracking-wider" style={{textTransform: 'uppercase'}}>Equity</span>
-                    <span className="mono text-xl text-text">${account?.equity?.toFixed(2) || '--'}</span>
-                 </div>
-                 <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '8px', borderBottom: '1px solid var(--grid)'}}>
-                    <span className="text-sm font-semibold text-muted tracking-wider" style={{textTransform: 'uppercase'}}>Free Margin</span>
-                    <span className="mono text-xl text-text">${account?.free_margin?.toFixed(2) || '--'}</span>
-                 </div>
-                 <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
-                    <span className="text-sm font-semibold text-muted tracking-wider" style={{textTransform: 'uppercase'}}>Margin Level</span>
-                    <span className={`mono text-xl ${account?.margin_level && account.margin_level < 100 ? 'text-red' : 'text-green'}`}>{account?.margin_level?.toFixed(1) || '--'}%</span>
-                 </div>
-              </div>
-           </div>
 
-           {/* AI Trading Intelligence Panel */}
-           <div className="panel">
-              <div className="panel-head">
-                 <div>
-                     <h2>AI Trading Intelligence</h2>
-                     <p>Multi-agent analysis & risk assessment</p>
+           {/* AI Trading Intelligence Panel - Main Trading Agent Interface */}
+           <div className="panel" style={{borderColor: 'rgba(240,195,107,0.3)'}}>
+              <div className="panel-head" style={{background: 'linear-gradient(90deg, rgba(240,195,107,0.05), transparent)'}}>
+                 <div style={{display: 'flex', alignItems: 'center', gap: '12px'}}>
+                     <div style={{
+                       width: '10px',
+                       height: '10px',
+                       borderRadius: '50%',
+                       background: '#58d17a',
+                       boxShadow: '0 0 10px #58d17a',
+                       animation: 'pulse 2s infinite'
+                     }}></div>
+                     <div>
+                       <h2 style={{color: '#f0c36b'}}>🤖 Trading Agent</h2>
+                       <p>Your personal trading assistant - Ask me anything</p>
+                     </div>
                  </div>
               </div>
               <div className="panel-body" style={{display: 'flex', flexDirection: 'column', gap: '12px'}}>
-                 {/* MCP Action Buttons */}
-                 <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px'}}>
-                    <button
-                      onClick={async () => {
-                        try {
-                          const res = await fetch(`${API_BASE}/mcp/market-analysis`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              asset: asset,
-                              current_price: currentPrice,
-                              support: [currentPrice * 0.99, currentPrice * 0.98],
-                              resistance: [currentPrice * 1.01, currentPrice * 1.02],
-                              rsi: data?.indicators?.rsi_14,
-                              trend: data?.indicators?.trend?.toLowerCase() || 'neutral',
-                              price_change_24h: pctChange
-                            })
-                          })
-                          if (res.ok) {
-                            const result = await res.json()
-                            setAIAnalysis(result)
-                          }
-                        } catch (err) {
-                          console.error('AI Analysis failed:', err)
-                        }
-                      }}
-                      style={{
-                        height: '38px',
-                        borderRadius: '10px',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        background: 'rgba(88,209,122,.15)',
-                        border: '1px solid rgba(88,209,122,.3)',
-                        color: '#58d17a',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Analyze Market
-                    </button>
-                    <button
-                      onClick={async () => {
-                        try {
-                          const res = await fetch(`${API_BASE}/mcp/run-debate`, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              asset: asset,
-                              current_price: currentPrice,
-                              rounds: 3
-                            })
-                          })
-                          if (res.ok) {
-                            const result = await res.json()
-                            setAIDebate(result)
-                          }
-                        } catch (err) {
-                          console.error('Debate failed:', err)
-                        }
-                      }}
-                      style={{
-                        height: '38px',
-                        borderRadius: '10px',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        background: 'rgba(240,195,107,.15)',
-                        border: '1px solid rgba(240,195,107,.3)',
-                        color: '#f0c36b',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Run Debate
-                    </button>
-                 </div>
-                 <button
-                   onClick={async () => {
-                     try {
-                       const res = await fetch(`${API_BASE}/mcp/check-risk`, {
-                         method: 'POST',
-                         headers: { 'Content-Type': 'application/json' },
-                         body: JSON.stringify({
-                           assets: [asset],
-                           portfolio_value: account?.equity || 10000
-                         })
-                       })
-                       if (res.ok) {
-                         const result = await res.json()
-                         setAIRisk(result)
-                       }
-                     } catch (err) {
-                       console.error('Risk check failed:', err)
-                     }
-                   }}
-                   style={{
-                     height: '38px',
-                     borderRadius: '10px',
-                     fontSize: '12px',
-                     fontWeight: 600,
-                     background: 'rgba(255,109,140,.15)',
-                     border: '1px solid rgba(255,109,140,.3)',
-                     color: '#ff6d8c',
-                     cursor: 'pointer'
-                   }}
-                 >
-                   Check Risk
-                 </button>
+                 {/* AI Chat Interface - PRIMARY INTERFACE */}
+                 {showChat && (
+                   <div style={{border: '1px solid rgba(240,195,107,0.2)', borderRadius: '12px', padding: '16px', background: 'rgba(0,0,0,0.3)'}}>
+                     {/* Chat Header */}
+                     <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px'}}>
+                       <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+                         <div style={{
+                           width: '8px',
+                           height: '8px',
+                           borderRadius: '50%',
+                           background: '#58d17a',
+                           boxShadow: '0 0 8px #58d17a'
+                         }}></div>
+                         <span style={{fontSize: '13px', fontWeight: 600, color: 'var(--text)'}}>Live Chat</span>
+                       </div>
+                       <button
+                         onClick={() => {
+                           setChatMessages([])
+                           localStorage.removeItem('tradingAgentChat')
+                         }}
+                         style={{
+                           fontSize: '11px',
+                           color: 'var(--muted)',
+                           background: 'transparent',
+                           border: 'none',
+                           cursor: 'pointer',
+                           padding: '4px 8px',
+                           borderRadius: '4px'
+                         }}
+                       >
+                         Clear
+                       </button>
+                     </div>
+
+                     {/* Chat Messages */}
+                     <div id="chat-messages-container" style={{
+                       maxHeight: '350px',
+                       overflowY: 'auto',
+                       display: 'flex',
+                       flexDirection: 'column',
+                       gap: '12px',
+                       marginBottom: '12px',
+                       padding: '8px',
+                       background: 'rgba(0,0,0,0.2)',
+                       borderRadius: '10px'
+                     }}>
+                       {chatMessages.length === 0 && (
+                         <div style={{textAlign: 'center', padding: '24px', color: 'var(--muted)', fontSize: '13px'}}>
+                           <div style={{marginBottom: '12px', fontSize: '24px'}}>👋</div>
+                           <div style={{fontWeight: 600, color: 'var(--text)', marginBottom: '8px'}}>
+                             Welcome to your Trading Agent
+                           </div>
+                           <div style={{lineHeight: '1.6'}}>
+                             I have real-time access to your dashboard data.<br/>
+                             Ask me anything about trades, signals, or market analysis.
+                           </div>
+                           <div style={{marginTop: '16px', display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center'}}>
+                             {/* Analyze Market Button */}
+                             <button
+                               onClick={async () => {
+                                 // Clear existing and re-fetch
+                                 setAIAnalysis(null);
+                                 setChatMessages(prev => [...prev, { role: 'user', content: 'Analyze Market', timestamp: new Date() }]);
+                                 try {
+                                   const res = await fetch(`${API_BASE}/mcp/market-analysis`, {
+                                     method: 'POST',
+                                     headers: { 'Content-Type': 'application/json' },
+                                     body: JSON.stringify({
+                                       asset: asset,
+                                       current_price: currentPrice,
+                                       support: [currentPrice * 0.99, currentPrice * 0.98],
+                                       resistance: [currentPrice * 1.01, currentPrice * 1.02],
+                                       rsi: data?.indicators?.rsi_14,
+                                       trend: data?.indicators?.trend?.toLowerCase() || 'neutral',
+                                       price_change_24h: pctChange
+                                     })
+                                   });
+                                   if (res.ok) {
+                                     const result = await res.json();
+                                     setAIAnalysis(result);
+                                     setChatMessages(prev => [...prev, { role: 'assistant', content: `Analysis complete: ${result.sentiment} (${Math.round(result.confidence * 100)}% confidence)`, timestamp: new Date() }]);
+                                   }
+                                 } catch (err) {
+                                   console.error('AI Analysis failed:', err);
+                                   setChatMessages(prev => [...prev, { role: 'assistant', content: 'Failed to analyze market', timestamp: new Date() }]);
+                                 }
+                               }}
+                               style={{
+                                 padding: '6px 12px',
+                                 borderRadius: '16px',
+                                 border: '1px solid var(--border)',
+                                 background: aiAnalysis ? 'rgba(88,209,122,0.2)' : 'rgba(240,195,107,0.1)',
+                                 color: aiAnalysis ? '#58d17a' : '#f0c36b',
+                                 fontSize: '11px',
+                                 cursor: 'pointer',
+                                 transition: 'all 0.2s'
+                               }}
+                               onMouseEnter={(e) => { if (!aiAnalysis) e.currentTarget.style.background = 'rgba(240,195,107,0.2)'; }}
+                               onMouseLeave={(e) => { if (!aiAnalysis) e.currentTarget.style.background = 'rgba(240,195,107,0.1)'; }}
+                             >
+                               {aiAnalysis ? 'Refresh Analysis' : 'Analyze Market'}
+                             </button>
+
+                             {/* Run Debate Button */}
+                             <button
+                               onClick={async () => {
+                                 setAIDebate(null);
+                                 setChatMessages(prev => [...prev, { role: 'user', content: 'Run Debate', timestamp: new Date() }]);
+                                 try {
+                                   const res = await fetch(`${API_BASE}/mcp/run-debate`, {
+                                     method: 'POST',
+                                     headers: { 'Content-Type': 'application/json' },
+                                     body: JSON.stringify({
+                                       asset: asset,
+                                       current_price: currentPrice,
+                                       rounds: 3
+                                     })
+                                   });
+                                   if (res.ok) {
+                                     const result = await res.json();
+                                     setAIDebate(result);
+                                     setChatMessages(prev => [...prev, { role: 'assistant', content: `Debate complete: ${result.verdict?.replace(/_/g, ' ')}`, timestamp: new Date() }]);
+                                   }
+                                 } catch (err) {
+                                   console.error('Debate failed:', err);
+                                   setChatMessages(prev => [...prev, { role: 'assistant', content: 'Debate failed', timestamp: new Date() }]);
+                                 }
+                               }}
+                               style={{
+                                 padding: '6px 12px',
+                                 borderRadius: '16px',
+                                 border: '1px solid var(--border)',
+                                 background: aiDebate ? 'rgba(240,195,107,0.3)' : 'rgba(240,195,107,0.1)',
+                                 color: '#f0c36b',
+                                 fontSize: '11px',
+                                 cursor: 'pointer',
+                                 transition: 'all 0.2s'
+                               }}
+                               onMouseEnter={(e) => { if (!aiDebate) e.currentTarget.style.background = 'rgba(240,195,107,0.2)'; }}
+                               onMouseLeave={(e) => { if (!aiDebate) e.currentTarget.style.background = 'rgba(240,195,107,0.1)'; }}
+                             >
+                               {aiDebate ? 'Refresh Debate' : 'Run Debate'}
+                             </button>
+
+                             {/* Check Risk Button */}
+                             <button
+                               onClick={async () => {
+                                 setAIRisk(null);
+                                 setChatMessages(prev => [...prev, { role: 'user', content: 'Check Risk', timestamp: new Date() }]);
+                                 try {
+                                   const res = await fetch(`${API_BASE}/mcp/check-risk`, {
+                                     method: 'POST',
+                                     headers: { 'Content-Type': 'application/json' },
+                                     body: JSON.stringify({
+                                       assets: [asset],
+                                       portfolio_value: account?.equity || 10000
+                                     })
+                                   });
+                                   if (res.ok) {
+                                     const result = await res.json();
+                                     setAIRisk(result);
+                                     setChatMessages(prev => [...prev, { role: 'assistant', content: `Risk check: ${result.risk_level} (${Math.round(result.risk_score * 100)}% score)`, timestamp: new Date() }]);
+                                   }
+                                 } catch (err) {
+                                   console.error('Risk check failed:', err);
+                                   setChatMessages(prev => [...prev, { role: 'assistant', content: 'Risk check failed', timestamp: new Date() }]);
+                                 }
+                               }}
+                               style={{
+                                 padding: '6px 12px',
+                                 borderRadius: '16px',
+                                 border: '1px solid var(--border)',
+                                 background: aiRisk ? 'rgba(255,109,140,0.2)' : 'rgba(240,195,107,0.1)',
+                                 color: aiRisk ? '#ff6d8c' : '#f0c36b',
+                                 fontSize: '11px',
+                                 cursor: 'pointer',
+                                 transition: 'all 0.2s'
+                               }}
+                               onMouseEnter={(e) => { if (!aiRisk) e.currentTarget.style.background = 'rgba(240,195,107,0.2)'; }}
+                               onMouseLeave={(e) => { if (!aiRisk) e.currentTarget.style.background = 'rgba(240,195,107,0.1)'; }}
+                             >
+                               {aiRisk ? 'Refresh Risk' : 'Check Risk'}
+                             </button>
+                           </div>
+                         </div>
+                       )}
+                       {chatMessages.map((msg, idx) => (
+                         <div
+                           key={idx}
+                           style={{
+                             display: 'flex',
+                             flexDirection: msg.role === 'user' ? 'row-reverse' : 'row',
+                             alignItems: 'flex-start',
+                             gap: '8px'
+                           }}
+                         >
+                           {msg.role === 'assistant' && (
+                             <div style={{
+                               width: '24px',
+                               height: '24px',
+                               borderRadius: '6px',
+                               background: 'rgba(88,209,122,0.2)',
+                               display: 'flex',
+                               alignItems: 'center',
+                               justifyContent: 'center',
+                               fontSize: '10px',
+                               color: '#58d17a',
+                               fontWeight: 'bold',
+                               flexShrink: 0
+                             }}>AI</div>
+                           )}
+                           <div style={{
+                             maxWidth: '80%',
+                             padding: '10px 14px',
+                             borderRadius: msg.role === 'user' ? '12px 12px 4px 12px' : '12px 12px 12px 4px',
+                             background: msg.role === 'user' ? 'rgba(240,195,107,0.15)' : 'rgba(255,255,255,0.05)',
+                             border: `1px solid ${msg.role === 'user' ? 'rgba(240,195,107,0.2)' : 'var(--border)'}`,
+                             color: 'var(--text)',
+                             fontSize: '13px',
+                             lineHeight: '1.5'
+                           }}>
+                             {msg.content.split(/(\*\*.*?\*\*)/).map((part, i) => {
+                               if (part.startsWith('**') && part.endsWith('**')) {
+                                 return <strong key={i} style={{color: '#f0c36b'}}>{part.slice(2, -2)}</strong>;
+                               }
+                               return part;
+                             })}
+                             <div style={{
+                               fontSize: '10px',
+                               color: 'var(--faint)',
+                               marginTop: '4px',
+                               textAlign: msg.role === 'user' ? 'right' : 'left'
+                             }}>
+                               {msg.timestamp.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                             </div>
+                           </div>
+                         </div>
+                       ))}
+                       {isTyping && (
+                         <div style={{display: 'flex', alignItems: 'center', gap: '8px'}}>
+                           <div style={{
+                             width: '24px',
+                             height: '24px',
+                             borderRadius: '6px',
+                             background: 'rgba(88,209,122,0.2)',
+                             display: 'flex',
+                             alignItems: 'center',
+                             justifyContent: 'center',
+                             fontSize: '10px',
+                             color: '#58d17a',
+                             fontWeight: 'bold'
+                           }}>AI</div>
+                           <div style={{
+                             padding: '12px 16px',
+                             borderRadius: '12px 12px 12px 4px',
+                             background: 'rgba(255,255,255,0.05)',
+                             border: '1px solid var(--border)',
+                             display: 'flex',
+                             gap: '4px',
+                             alignItems: 'center'
+                           }}>
+                             <span style={{
+                               width: '6px',
+                               height: '6px',
+                               borderRadius: '50%',
+                               background: '#58d17a',
+                               animation: 'pulse 1s infinite'
+                             }}></span>
+                             <span style={{
+                               width: '6px',
+                               height: '6px',
+                               borderRadius: '50%',
+                               background: '#58d17a',
+                               animation: 'pulse 1s infinite 0.2s'
+                             }}></span>
+                             <span style={{
+                               width: '6px',
+                               height: '6px',
+                               borderRadius: '50%',
+                               background: '#58d17a',
+                               animation: 'pulse 1s infinite 0.4s'
+                             }}></span>
+                           </div>
+                         </div>
+                       )}
+                       <div ref={chatEndRef}></div>
+                     </div>
+
+                     {/* Chat Input */}
+                     <div style={{display: 'flex', gap: '8px'}}>
+                       <input
+                         type="text"
+                         value={chatInput}
+                         onChange={(e) => setChatInput(e.target.value)}
+                         onKeyDown={(e) => {
+                           if (e.key === 'Enter' && chatInput.trim() && !isTyping) {
+                             handleSendMessage();
+                           }
+                         }}
+                         placeholder="Ask about current market..."
+                         style={{
+                           flex: 1,
+                           height: '40px',
+                           padding: '0 14px',
+                           borderRadius: '10px',
+                           border: '1px solid var(--border)',
+                           background: '#1f2125',
+                           color: 'var(--text)',
+                           fontSize: '13px',
+                           outline: 'none'
+                         }}
+                       />
+                       <button
+                         onClick={handleSendMessage}
+                         disabled={!chatInput.trim() || isTyping}
+                         style={{
+                           height: '40px',
+                           padding: '0 18px',
+                           borderRadius: '10px',
+                           border: 'none',
+                           background: chatInput.trim() && !isTyping ? '#58d17a' : 'rgba(88,209,122,0.3)',
+                           color: '#000',
+                           fontSize: '13px',
+                           fontWeight: 600,
+                           cursor: chatInput.trim() && !isTyping ? 'pointer' : 'not-allowed'
+                         }}
+                       >
+                         Send
+                       </button>
+                     </div>
+
+                     {/* Trading Controls - Execute Trades */}
+                     <div style={{display: 'flex', gap: '8px', alignItems: 'center', marginTop: '10px', padding: '10px', background: 'rgba(0,0,0,0.2)', borderRadius: '10px', border: '1px solid var(--border)'}}>
+                       <div style={{display: 'flex', alignItems: 'center', gap: '6px', flex: 1}}>
+                         <span style={{fontSize: '11px', color: 'var(--muted)'}}>Lot:</span>
+                         <input
+                           type="number"
+                           step="0.01"
+                           min="0.01"
+                           max="10"
+                           value={lotSize}
+                           onChange={(e) => setLotSize(parseFloat(e.target.value) || 0.01)}
+                           style={{
+                             width: '55px',
+                             height: '32px',
+                             borderRadius: '6px',
+                             border: '1px solid var(--border)',
+                             background: '#1f2125',
+                             color: 'var(--text)',
+                             fontSize: '12px',
+                             textAlign: 'center',
+                             fontFamily: 'var(--font-mono, monospace)'
+                           }}
+                         />
+                       </div>
+                       <button
+                         onClick={async () => {
+                           try {
+                             const res = await fetch(`${API_BASE}/positions/open`, {
+                               method: 'POST',
+                               headers: {'Content-Type': 'application/json'},
+                               body: JSON.stringify({order_type: 'buy', volume: lotSize})
+                             });
+                             const result = await res.json();
+                             if (result.success) {
+                               setChatMessages(prev => [...prev, {
+                                 role: 'assistant',
+                                 content: `✅ BUY executed! Ticket #${result.ticket} - ${lotSize} lots`,
+                                 timestamp: new Date()
+                               }]);
+                               fetchData();
+                             } else {
+                               setChatMessages(prev => [...prev, {
+                                 role: 'assistant',
+                                 content: `❌ Buy failed: ${result.detail || 'Max positions reached'}`,
+                                 timestamp: new Date()
+                               }]);
+                             }
+                           } catch (err) {
+                             setChatMessages(prev => [...prev, {
+                               role: 'assistant',
+                               content: `❌ Error placing buy`,
+                               timestamp: new Date()
+                             }]);
+                           }
+                         }}
+                         style={{
+                           flex: 1,
+                           height: '32px',
+                           borderRadius: '6px',
+                           border: '1px solid rgba(88,209,122,0.4)',
+                           background: 'rgba(88,209,122,0.15)',
+                           color: 'var(--green)',
+                           fontSize: '12px',
+                           fontWeight: 700,
+                           cursor: 'pointer',
+                           transition: 'all 0.2s'
+                         }}
+                         onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(88,209,122,0.25)'; }}
+                         onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(88,209,122,0.15)'; }}
+                       >
+                         BUY
+                       </button>
+                       <button
+                         onClick={async () => {
+                           try {
+                             const res = await fetch(`${API_BASE}/positions/open`, {
+                               method: 'POST',
+                               headers: {'Content-Type': 'application/json'},
+                               body: JSON.stringify({order_type: 'sell', volume: lotSize})
+                             });
+                             const result = await res.json();
+                             if (result.success) {
+                               setChatMessages(prev => [...prev, {
+                                 role: 'assistant',
+                                 content: `✅ SELL executed! Ticket #${result.ticket} - ${lotSize} lots`,
+                                 timestamp: new Date()
+                               }]);
+                               fetchData();
+                             } else {
+                               setChatMessages(prev => [...prev, {
+                                 role: 'assistant',
+                                 content: `❌ Sell failed: ${result.detail || 'Max positions reached'}`,
+                                 timestamp: new Date()
+                               }]);
+                             }
+                           } catch (err) {
+                             setChatMessages(prev => [...prev, {
+                               role: 'assistant',
+                               content: `❌ Error placing sell`,
+                               timestamp: new Date()
+                             }]);
+                           }
+                         }}
+                         style={{
+                           flex: 1,
+                           height: '32px',
+                           borderRadius: '6px',
+                           border: '1px solid rgba(255,109,140,0.4)',
+                           background: 'rgba(255,109,140,0.15)',
+                           color: 'var(--red)',
+                           fontSize: '12px',
+                           fontWeight: 700,
+                           cursor: 'pointer',
+                           transition: 'all 0.2s'
+                         }}
+                         onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,109,140,0.25)'; }}
+                         onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(255,109,140,0.15)'; }}
+                       >
+                         SELL
+                       </button>
+                     </div>
+                   </div>
+                 )}
+
+                 {/* MCP Results Section */}
 
                  {/* AI Analysis Results */}
                  {aiAnalysis && aiAnalysis.success && (
                    <div style={{marginTop: '8px', padding: '12px', borderRadius: '10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)'}}>
                       <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px'}}>
-                         <strong style={{fontSize: '12px', color: 'var(--text)'}}>Sentiment</strong>
+                         <strong style={{fontSize: '12px', color: 'var(--text)'}}>AI Analysis</strong>
+                         <button
+                           onClick={() => setAIAnalysis(null)}
+                           style={{
+                             fontSize: '14px',
+                             color: 'var(--muted)',
+                             background: 'transparent',
+                             border: 'none',
+                             cursor: 'pointer',
+                             padding: '0 4px',
+                             lineHeight: 1
+                           }}
+                         >
+                           ×
+                         </button>
+                      </div>
+                      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px'}}>
+                         <span style={{fontSize: '11px', color: 'var(--muted)'}}>Sentiment</span>
                          <span style={{
                            fontSize: '11px',
                            fontWeight: 600,
@@ -1026,7 +1556,24 @@ export default function GoldTradingDashboard() {
                  {aiDebate && aiDebate.success && (
                    <div style={{marginTop: '8px', padding: '12px', borderRadius: '10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)'}}>
                       <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px'}}>
-                         <strong style={{fontSize: '12px', color: 'var(--text)'}}>Debate Verdict</strong>
+                         <strong style={{fontSize: '12px', color: 'var(--text)'}}>Bull/Bear Debate</strong>
+                         <button
+                           onClick={() => setAIDebate(null)}
+                           style={{
+                             fontSize: '14px',
+                             color: 'var(--muted)',
+                             background: 'transparent',
+                             border: 'none',
+                             cursor: 'pointer',
+                             padding: '0 4px',
+                             lineHeight: 1
+                           }}
+                         >
+                           ×
+                         </button>
+                      </div>
+                      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px'}}>
+                         <span style={{fontSize: '11px', color: 'var(--muted)'}}>Verdict</span>
                          <span style={{
                            fontSize: '11px',
                            fontWeight: 600,
@@ -1055,7 +1602,24 @@ export default function GoldTradingDashboard() {
                  {aiRisk && aiRisk.success && (
                    <div style={{marginTop: '8px', padding: '12px', borderRadius: '10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)'}}>
                       <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px'}}>
-                         <strong style={{fontSize: '12px', color: 'var(--text)'}}>Risk Level</strong>
+                         <strong style={{fontSize: '12px', color: 'var(--text)'}}>Risk Assessment</strong>
+                         <button
+                           onClick={() => setAIRisk(null)}
+                           style={{
+                             fontSize: '14px',
+                             color: 'var(--muted)',
+                             background: 'transparent',
+                             border: 'none',
+                             cursor: 'pointer',
+                             padding: '0 4px',
+                             lineHeight: 1
+                           }}
+                         >
+                           ×
+                         </button>
+                      </div>
+                      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px'}}>
+                         <span style={{fontSize: '11px', color: 'var(--muted)'}}>Risk Level</span>
                          <span style={{
                            fontSize: '11px',
                            fontWeight: 600,
@@ -1085,6 +1649,34 @@ export default function GoldTradingDashboard() {
                       )}
                    </div>
                  )}
+              </div>
+           </div>
+
+           {/* Account Stats Panel */}
+           <div className="panel">
+              <div className="panel-head">
+                 <div>
+                     <h2>Account Status</h2>
+                     <p>{account?.account_type ? account.account_type.toUpperCase() : 'Loading...'}</p>
+                 </div>
+              </div>
+              <div className="panel-body" style={{display: 'flex', flexDirection: 'column', gap: '16px'}}>
+                 <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '8px', borderBottom: '1px solid var(--grid)'}}>
+                    <span className="text-sm font-semibold text-muted tracking-wider" style={{textTransform: 'uppercase'}}>Balance</span>
+                    <span className="mono text-2xl text-text">${account?.balance?.toFixed(2) || '--'}</span>
+                 </div>
+                 <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '8px', borderBottom: '1px solid var(--grid)'}}>
+                    <span className="text-sm font-semibold text-muted tracking-wider" style={{textTransform: 'uppercase'}}>Equity</span>
+                    <span className="mono text-xl text-text">${account?.equity?.toFixed(2) || '--'}</span>
+                 </div>
+                 <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingBottom: '8px', borderBottom: '1px solid var(--grid)'}}>
+                    <span className="text-sm font-semibold text-muted tracking-wider" style={{textTransform: 'uppercase'}}>Free Margin</span>
+                    <span className="mono text-xl text-text">${account?.free_margin?.toFixed(2) || '--'}</span>
+                 </div>
+                 <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                    <span className="text-sm font-semibold text-muted tracking-wider" style={{textTransform: 'uppercase'}}>Margin Level</span>
+                    <span className={`mono text-xl ${account?.margin_level && account.margin_level < 100 ? 'text-red' : 'text-green'}`}>{account?.margin_level?.toFixed(1) || '--'}%</span>
+                 </div>
               </div>
            </div>
 

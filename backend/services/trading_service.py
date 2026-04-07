@@ -315,6 +315,49 @@ class TradingService:
             "indicators": sig.indicators,
         }
 
+    async def open_position(self, order_type: str, volume: float, symbol: Optional[str] = None, sl: Optional[float] = None, tp: Optional[float] = None) -> Optional[Dict[str, Any]]:
+        """Open a new position manually"""
+        if not config.can_trade:
+            logger.warning("Cannot open position: trading not enabled")
+            return None
+
+        # Check if already at max positions
+        if len(self.state.positions) >= config.trading.max_open_positions:
+            logger.warning(f"Max positions reached: {len(self.state.positions)}/{config.trading.max_open_positions}")
+            return None
+
+        symbol = symbol or self._get_active_symbol()
+
+        # Get current price for SL/TP calculation if not provided
+        price_data = self.get_price_data()
+        current_price = price_data.get("close") if price_data else None
+
+        # Default SL/TP based on ATR if not provided
+        if sl is None and current_price:
+            atr = self.state.last_indicator.atr_14 if self.state.last_indicator else 50
+            sl = current_price - (atr * 2) if order_type == "buy" else current_price + (atr * 2)
+        if tp is None and current_price:
+            atr = self.state.last_indicator.atr_14 if self.state.last_indicator else 50
+            tp = current_price + (atr * 3) if order_type == "buy" else current_price - (atr * 3)
+
+        logger.info(f"Manual {order_type} order: {volume} lots @ {symbol}")
+
+        result = await self.adapter.place_order(
+            symbol=symbol,
+            order_type=order_type,
+            volume=volume,
+            sl=sl,
+            tp=tp
+        )
+
+        if result:
+            logger.info(f"Manual order placed: Ticket {result['ticket']}")
+            self.state.is_trading = True
+            return result
+        else:
+            logger.error("Manual order placement failed")
+            return None
+
     async def close_position(self, ticket: int) -> bool:
         """Close a specific position"""
         if not config.can_trade:

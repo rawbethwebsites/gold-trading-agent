@@ -98,6 +98,14 @@ class ClosePositionRequest(BaseModel):
     ticket: int
 
 
+class OpenPositionRequest(BaseModel):
+    order_type: str  # "buy" or "sell"
+    volume: float
+    symbol: Optional[str] = None
+    sl: Optional[float] = None
+    tp: Optional[float] = None
+
+
 def set_trading_service(service: TradingService):
     """Set the global trading service instance"""
     global trading_service
@@ -168,6 +176,29 @@ async def get_last_signal():
     if data is None:
         return None
     return SignalResponse(**data)
+
+
+@router.post("/positions/open")
+async def open_position(request: OpenPositionRequest):
+    """Open a new position"""
+    if trading_service is None:
+        raise HTTPException(status_code=503, detail="Trading service not initialized")
+
+    if request.order_type not in ["buy", "sell"]:
+        raise HTTPException(status_code=400, detail="order_type must be 'buy' or 'sell'")
+
+    result = await trading_service.open_position(
+        order_type=request.order_type,
+        volume=request.volume,
+        symbol=request.symbol,
+        sl=request.sl,
+        tp=request.tp
+    )
+
+    if result:
+        return {"success": True, "ticket": result["ticket"], "order": result}
+    else:
+        raise HTTPException(status_code=400, detail="Failed to open position - check max positions or trading enabled")
 
 
 @router.post("/positions/close")
@@ -447,3 +478,129 @@ async def mcp_check_risk(request: Dict[str, Any] = Body(...)):
         "params": request
     }
     return handle_mcp_request(mcp_request)
+
+
+# Chat Models
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+
+class ChatRequest(BaseModel):
+    message: str
+    context: Dict[str, Any]
+    history: List[ChatMessage]
+
+
+import subprocess
+import json
+import os
+
+# Try to find claude CLI path
+CLAUDE_CLI_PATHS = [
+    "/Users/hitler/.local/bin/claude",
+    "/usr/local/bin/claude",
+    "claude",
+]
+
+@router.post("/chat")
+async def chat_with_agent(request: ChatRequest):
+    """
+    Chat with Claude CLI as the trading agent
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+
+    print(f"\n[CHAT] ========== New chat request ==========", flush=True)
+    print(f"[CHAT] User message: {request.message[:50]}...", flush=True)
+
+    try:
+        ctx = request.context
+        user_message = request.message
+
+        # Build system prompt with trading context
+        system_prompt = f"""You are Claude, a professional trading analysis agent embedded in a live trading dashboard.
+
+LIVE MARKET DATA:
+- Asset: {ctx.get('assetName', 'Unknown')} ({ctx.get('asset', 'Unknown')})
+- Current Price: ${ctx.get('currentPrice', 'N/A')}
+- Signal: {ctx.get('signal', 'N/A')} (Confidence: {ctx.get('signalConfidence', 0)*100:.0f}%)
+- Trend: {ctx.get('trend', 'NEUTRAL')}
+- EMA 9: {ctx.get('ema9', 'N/A')} | EMA 21: {ctx.get('ema21', 'N/A')}
+- MACD: {ctx.get('macdHist', 'N/A')} | ATR: {ctx.get('atr14', 'N/A')} | RSI: {ctx.get('rsi14', 'N/A')}
+
+Answer concisely using the live data. Keep under 4 sentences. Bold important numbers with **.**"""
+
+        # Build conversation for Claude
+        conversation = f"{system_prompt}\n\nUser: {user_message}\n\nClaude:"
+
+        # Try to find and call Claude CLI
+        claude_path = None
+        for path in CLAUDE_CLI_PATHS:
+            if path == "claude":
+                result = subprocess.run(["which", "claude"], capture_output=True, text=True)
+                if result.returncode == 0:
+                    claude_path = result.stdout.strip()
+                    break
+            elif os.path.exists(path):
+                claude_path = path
+                break
+
+        print(f"[CHAT] Claude CLI path: {claude_path}", flush=True)
+
+        if claude_path:
+            try:
+                print(f"[CHAT] Calling Claude CLI subprocess...", flush=True)
+
+                # Call Claude with the prompt
+                proc = subprocess.run(
+                    [claude_path, "-p", conversation],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    cwd="/Users/hitler/Projects/gold-trading-agent"
+                )
+
+                print(f"[CHAT] Claude CLI return code: {proc.returncode}", flush=True)
+
+                if proc.returncode == 0 and proc.stdout.strip():
+                    response_text = proc.stdout.strip()
+                    print(f"[CHAT] Claude response: {response_text[:100]}...", flush=True)
+
+                    return {
+                        "success": True,
+                        "response": response_text,
+                        "source": "claude_cli"
+                    }
+                else:
+                    print(f"[CHAT] Claude CLI failed: {proc.stderr}", flush=True)
+                    raise Exception(f"Claude error: {proc.stderr[:200]}")
+
+            except Exception as e:
+                print(f"[CHAT] Claude CLI exception: {e}", flush=True)
+                raise
+        else:
+            print("[CHAT] Claude CLI not found - using fallback", flush=True)
+            raise Exception("Claude CLI not found")
+
+    except Exception as e:
+        # FALLBACK to rule-based
+        print(f"[CHAT] FALLBACK MODE: {e}", flush=True)
+
+        ctx = request.context
+        user_question = request.message.lower()
+
+        # Simple rule-based responses
+        if any(word in user_question for word in ['buy', 'sell']):
+            response = f"Signal: **{ctx.get('signal', 'HOLD')}** ({ctx.get('signalConfidence', 0)*100:.0f}% confidence). Trend: **{ctx.get('trend', 'neutral')}**. Price: **${ctx.get('currentPrice', 'N/A')}**"
+        elif any(word in user_question for word in ['risk']):
+            response = f"Risk: **{ctx.get('controls', {}).get('riskPercent', 0)}%** | Lot: **{ctx.get('controls', {}).get('lotSize', 0)}** | ATR: **{ctx.get('atr14', 'N/A')}**"
+        else:
+            response = f"**{ctx.get('assetName', 'Gold')}** at **${ctx.get('currentPrice', 'N/A')}**. Signal: **{ctx.get('signal', 'HOLD')}**. Ask about entries, risk, or indicators."
+
+        return {
+            "success": True,
+            "response": response,
+            "source": "fallback",
+            "error": str(e)
+        }

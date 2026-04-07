@@ -20,7 +20,7 @@ class TradingConfig:
     """Trading safety configuration"""
     enable_trading: bool = False
     enable_demo_trades: bool = False
-    max_open_positions: int = 1
+    max_open_positions: int = 5
     default_lot_size: float = 0.01
     max_daily_loss_percent: float = 2.0
 

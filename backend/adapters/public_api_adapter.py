@@ -1,6 +1,8 @@
 """
-Twelve Data Adapter
-Real gold price data from Twelve Data API with key rotation and API call control
+Public API Adapter
+Real gold and crypto price data from free public APIs:
+- Gold: gold-api.com, metals.live, goldprice.org, CoinPaprika (PAXG/XAUT), Binance, Kraken, CoinGecko
+- Bitcoin: CoinGecko, CoinPaprika, Blockchain.com, Binance, Kraken
 """
 
 import asyncio
@@ -12,10 +14,10 @@ from typing import Optional, List, Dict, Any
 from . import TradingAdapter, PriceData, AccountInfo, Position
 
 
-class TwelveDataAdapter(TradingAdapter):
+class PublicApiAdapter(TradingAdapter):
     """
-    Adapter for Twelve Data API with automatic key rotation.
-    Supports multiple API keys and can disable API calls to save tokens.
+    Adapter for free public APIs providing real-time gold and crypto prices.
+    Falls back through multiple sources for reliability.
     """
 
     def __init__(self, api_keys: List[str] = None, api_calls_enabled: bool = True):
@@ -28,8 +30,8 @@ class TwelveDataAdapter(TradingAdapter):
         self._failed_keys = set()  # Track keys that have hit rate limits
         self._cache_timestamp = None
         self._cache_duration = 300  # Cache for 5 minutes when API disabled
-        self._provider_name = "twelve_data"
-        self._active_source = "12Data"
+        self._provider_name = "public_api"
+        self._active_source = "Public API"
         self._first_fetch = True  # Allow first price to set baseline
 
         # Gold-api.com cache (60 seconds to prevent IP blocking)
@@ -90,7 +92,7 @@ class TwelveDataAdapter(TradingAdapter):
             return True
 
         if not self._api_keys:
-            print("⚠️  No Twelve Data API keys configured")
+            print("⚠️  No API keys configured - using public fallbacks only")
             return False
 
         # Try each key until one works
@@ -137,7 +139,7 @@ class TwelveDataAdapter(TradingAdapter):
                 self._rotate_key()
 
         # All keys failed, enable fallback mode
-        print("⚠️  Twelve Data keys exhausted, using public fallback APIs")
+        print("⚠️  All API keys exhausted, using public fallback APIs (gold-api.com, metals.live, etc.)")
         self._api_calls_enabled = False
         self._connected = True
         self._active_source = "Public Fallback"
@@ -224,11 +226,11 @@ class TwelveDataAdapter(TradingAdapter):
         if price:
             return price
 
-        # BTCUSD always uses fallback APIs (Twelve Data free tier doesn't include crypto)
+        # BTCUSD always uses fallback APIs (free crypto APIs only)
         if symbol == "BTCUSD":
             return await self._run_bitcoin_fallback()
 
-        # If API calls disabled, run the fallback API race instead of twelve data
+        # If API calls disabled, run the fallback API race instead of primary APIs
         if not self._api_calls_enabled:
             return await self._run_fallback_race()
 
@@ -255,7 +257,7 @@ class TwelveDataAdapter(TradingAdapter):
                                 if price > 0:
                                     self._last_price = price
                                     self._cache_timestamp = datetime.now()
-                                    self._active_source = "12Data"
+                                    self._active_source = "Primary API"
                                     return PriceData(
                                         timestamp=datetime.now(),
                                         open=float(data.get("open", price)),
@@ -285,7 +287,35 @@ class TwelveDataAdapter(TradingAdapter):
         return await self._run_fallback_race()
 
     async def _run_bitcoin_fallback(self) -> Optional[PriceData]:
-        """Fetch Bitcoin price from public APIs - CoinGecko is most reliable"""
+        """Fetch Bitcoin price from public APIs - CoinGecko is most reliable
+
+        Cache behavior:
+        - Cache is updated on EVERY successful API call
+        - If cache is < 2 minutes old: return cache immediately (fast path)
+        - If cache is 2-5 minutes old: try APIs, fallback to cache if APIs fail
+        - If cache is > 5 minutes old: try APIs, return stale cache only as last resort
+        - Hardcoded only used if NO cache exists ever
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        now = datetime.now()
+
+        # Check if we have a fresh cache (less than 2 minutes old)
+        if self._last_price and self._cache_timestamp:
+            cache_age = (now - self._cache_timestamp).total_seconds()
+            if cache_age < 120:  # Less than 2 minutes old - return immediately
+                logger.info(f"[BTC] Using fresh cache: {self._last_price} (age: {cache_age:.0f}s)")
+                return PriceData(
+                    timestamp=now,
+                    open=self._last_price,
+                    high=self._last_price,
+                    low=self._last_price,
+                    close=self._last_price,
+                    volume=0,
+                    symbol="BTCUSD"
+                )
+
         headers = {
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
             "Accept": "application/json"
@@ -293,11 +323,16 @@ class TwelveDataAdapter(TradingAdapter):
         async with aiohttp.ClientSession(headers=headers) as session:
             try:
                 # Try CoinGecko first (most reliable)
+                logger.info("[BTC] Trying CoinGecko...")
                 async with session.get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd", timeout=10) as r:
+                    logger.info(f"[BTC] CoinGecko status: {r.status}")
                     if r.status == 200:
                         data = await r.json()
                         price = float(data.get("bitcoin", {}).get("usd", 0))
+                        logger.info(f"[BTC] CoinGecko price: {price}")
                         if price > 0:
+                            self._last_price = price
+                            self._cache_timestamp = datetime.now()
                             self._active_source = "CoinGecko"
                             return PriceData(
                                 timestamp=datetime.now(),
@@ -308,16 +343,23 @@ class TwelveDataAdapter(TradingAdapter):
                                 volume=0,
                                 symbol="BTCUSD"
                             )
-            except Exception:
-                pass
+                    elif r.status == 429:
+                        logger.warning("[BTC] CoinGecko rate limited")
+            except Exception as e:
+                logger.error(f"[BTC] CoinGecko error: {e}")
 
             try:
                 # Try CoinPaprika as fallback
+                logger.info("[BTC] Trying CoinPaprika...")
                 async with session.get("https://api.coinpaprika.com/v1/tickers/btc-bitcoin", timeout=10) as r:
+                    logger.info(f"[BTC] CoinPaprika status: {r.status}")
                     if r.status == 200:
                         data = await r.json()
                         price = float(data.get("quotes", {}).get("USD", {}).get("price", 0))
+                        logger.info(f"[BTC] CoinPaprika price: {price}")
                         if price > 0:
+                            self._last_price = price
+                            self._cache_timestamp = datetime.now()
                             self._active_source = "CoinPaprika"
                             return PriceData(
                                 timestamp=datetime.now(),
@@ -328,16 +370,21 @@ class TwelveDataAdapter(TradingAdapter):
                                 volume=0,
                                 symbol="BTCUSD"
                             )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"[BTC] CoinPaprika error: {e}")
 
             try:
                 # Try Blockchain.com as last resort
+                logger.info("[BTC] Trying Blockchain.com...")
                 async with session.get("https://api.blockchain.com/v3/exchange/tickers/BTC-USD", timeout=10) as r:
+                    logger.info(f"[BTC] Blockchain.com status: {r.status}")
                     if r.status == 200:
                         data = await r.json()
                         price = float(data.get("last_trade_price", 0))
+                        logger.info(f"[BTC] Blockchain.com price: {price}")
                         if price > 0:
+                            self._last_price = price
+                            self._cache_timestamp = datetime.now()
                             self._active_source = "Blockchain.com"
                             return PriceData(
                                 timestamp=datetime.now(),
@@ -348,16 +395,89 @@ class TwelveDataAdapter(TradingAdapter):
                                 volume=0,
                                 symbol="BTCUSD"
                             )
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"[BTC] Blockchain.com error: {e}")
 
-        # Return cached/default
+            # Additional fallbacks: Binance and Kraken
+            try:
+                # Try Binance
+                logger.info("[BTC] Trying Binance...")
+                async with session.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", timeout=10) as r:
+                    logger.info(f"[BTC] Binance status: {r.status}")
+                    if r.status == 200:
+                        data = await r.json()
+                        price = float(data.get("price", 0))
+                        logger.info(f"[BTC] Binance price: {price}")
+                        if price > 0:
+                            self._last_price = price
+                            self._cache_timestamp = datetime.now()
+                            self._active_source = "Binance"
+                            return PriceData(
+                                timestamp=datetime.now(),
+                                open=price,
+                                high=price,
+                                low=price,
+                                close=price,
+                                volume=0,
+                                symbol="BTCUSD"
+                            )
+            except Exception as e:
+                logger.error(f"[BTC] Binance error: {e}")
+
+            try:
+                # Try Kraken
+                logger.info("[BTC] Trying Kraken...")
+                async with session.get("https://api.kraken.com/0/public/Ticker?pair=XBTUSD", timeout=10) as r:
+                    logger.info(f"[BTC] Kraken status: {r.status}")
+                    if r.status == 200:
+                        data = await r.json()
+                        result = data.get("result", {})
+                        # Kraken returns pair name like XXBTZUSD
+                        for pair_key in result:
+                            pair_data = result[pair_key]
+                            price = float(pair_data.get("c", [0])[0])  # "c" is last trade closed price
+                            logger.info(f"[BTC] Kraken price: {price}")
+                            if price > 0:
+                                self._last_price = price
+                                self._cache_timestamp = datetime.now()
+                                self._active_source = "Kraken"
+                                return PriceData(
+                                    timestamp=datetime.now(),
+                                    open=price,
+                                    high=price,
+                                    low=price,
+                                    close=price,
+                                    volume=0,
+                                    symbol="BTCUSD"
+                                )
+            except Exception as e:
+                logger.error(f"[BTC] Kraken error: {e}")
+
+        # All APIs failed - use stale cache if available (up to 5 minutes old is acceptable)
+        if self._last_price and self._cache_timestamp:
+            cache_age = (datetime.now() - self._cache_timestamp).total_seconds()
+            logger.warning(f"[BTC] All APIs failed, using stale cache: {self._last_price} (age: {cache_age:.0f}s)")
+            return PriceData(
+                timestamp=datetime.now(),
+                open=self._last_price,
+                high=self._last_price,
+                low=self._last_price,
+                close=self._last_price,
+                volume=0,
+                symbol="BTCUSD"
+            )
+
+        # Only use hardcoded if NO cache exists at all (first run, no successful API call yet)
+        logger.error("[BTC] All APIs failed and NO CACHE EXISTS - using hardcoded 67843 as emergency fallback")
+        # Initialize cache with hardcoded so next call has something
+        self._last_price = 67843.43
+        self._cache_timestamp = datetime.now()
         return PriceData(
             timestamp=datetime.now(),
-            open=68000.0,
-            high=68000.0,
-            low=68000.0,
-            close=68000.0,
+            open=67843.43,
+            high=67843.43,
+            low=67843.43,
+            close=67843.43,
             volume=0,
             symbol="BTCUSD"
         )
@@ -543,7 +663,7 @@ class TwelveDataAdapter(TradingAdapter):
         return rates
 
     async def get_account_info(self) -> Optional[AccountInfo]:
-        """Simulated account for Twelve Data mode"""
+        """Simulated account for data-only mode"""
         return AccountInfo(
             balance=10000.0,
             equity=10000.0,
@@ -555,7 +675,7 @@ class TwelveDataAdapter(TradingAdapter):
         )
 
     async def get_positions(self) -> List[Position]:
-        """No positions in Twelve Data mode (data only)"""
+        """No positions in data-only mode"""
         return []
 
     async def get_symbols(self) -> List[str]:
@@ -565,8 +685,8 @@ class TwelveDataAdapter(TradingAdapter):
     async def place_order(self, symbol: str, order_type: str, volume: float,
                          price: Optional[float] = None, sl: Optional[float] = None,
                          tp: Optional[float] = None) -> Optional[Dict[str, Any]]:
-        """Trading not supported in Twelve Data mode"""
-        print("Trading not available in Twelve Data mode. Use MT5 for trading.")
+        """Trading not supported in data-only mode"""
+        print("Trading not available in data-only mode. Use Demo Trading or MT5 for trading.")
         return None
 
     async def close_position(self, ticket: int) -> bool:
