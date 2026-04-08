@@ -462,16 +462,6 @@ export default function GoldTradingDashboard() {
       setData(dashboardData)
       if (dashboardData?.price?.close) {
         setLastPriceUpdate(new Date())
-        // Sync chart with backend price - update last tick to match real price
-        const backendPrice = dashboardData.price.close
-        setHistoricalData((prev: any[]) => {
-          if (prev.length === 0) return prev
-          const lastIdx = prev.length - 1
-          const updated = [...prev]
-          updated[lastIdx] = { ...updated[lastIdx], price: backendPrice }
-          return updated
-        })
-        setCurrentTick((prev: any) => prev ? { ...prev, price: backendPrice } : prev)
       }
       setError(null)
     } catch (err) {
