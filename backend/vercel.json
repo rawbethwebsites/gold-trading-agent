@@ -1,0 +1,20 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "api/index.py"
+    }
+  ],
+  "env": {
+    "APP_DATA_PROVIDER": "multi_asset",
+    "APP_ASSETS": "XAUUSD,BTCUSD",
+    "TRADING_ENABLE_TRADING": "true"
+  }
+}
