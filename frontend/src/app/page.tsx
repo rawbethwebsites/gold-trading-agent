@@ -15,7 +15,7 @@ import {
 } from 'recharts'
 import { Activity, Bell, AlertTriangle, ChevronDown, ChevronUp, Settings } from 'lucide-react'
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://hitlers-macbook-pro.taild1f244.ts.net'
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://hitlers-macbook-pro.taild1f244.ts.net/api'
 const POLLING_INTERVAL = 5000 // 5 seconds
 
 interface DashboardData {
