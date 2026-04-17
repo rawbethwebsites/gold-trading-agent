@@ -1,8 +1,8 @@
 #!/bin/bash
-# Gold Trading Agent - Startup Script
-# Exness + MT5 Local-First Trading Agent
+# Goldrix - Startup Script
+# Exness + MT5 Local-First Dashboard
 
-echo "🚀 Gold Trading Agent - Exness + MT5"
+echo "🚀 Goldrix - Exness + MT5"
 echo "======================================"
 echo ""
 
@@ -116,7 +116,7 @@ echo "   ✅ Frontend running on http://localhost:3005"
 echo ""
 
 echo "======================================"
-echo "✅ Gold Trading Agent is running!"
+echo "✅ Goldrix is running!"
 echo "======================================"
 echo ""
 echo "  📊 Dashboard:  http://localhost:3005"

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Gold Trading Agent - Standalone AI Trading Assistant
+Goldrix - Standalone AI Trading Assistant
 Uses the gold-api-feed MCP skill for market analysis
 
 Usage:
@@ -27,7 +27,7 @@ except ImportError:
 
 class TradingAgent:
     """
-    AI Trading Agent powered by gold-api-feed MCP skill
+    Goldrix agent powered by gold-api-feed MCP skill
 
     Provides:
     - Real-time price checking
@@ -38,8 +38,8 @@ class TradingAgent:
     """
 
     def __init__(self):
-        self.name = "Gold Trading Agent"
-        self.version = "2.0.0"
+        self.name = "Goldrix"
+        self.version = "2.1.0"
 
     def get_price(self, symbol: str = "XAU") -> Dict[str, Any]:
         """Get current price for an asset"""
@@ -304,7 +304,7 @@ class TradingAgent:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Gold Trading Agent")
+    parser = argparse.ArgumentParser(description="Goldrix")
     parser.add_argument("--analyze", action="store_true", help="Run market analysis")
     parser.add_argument("--debate", action="store_true", help="Run bull/bear debate")
     parser.add_argument("--risk", action="store_true", help="Risk assessment")

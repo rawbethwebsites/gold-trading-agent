@@ -1,4 +1,4 @@
-# Gold Trading Agent
+# Goldrix
 
 AI-powered trading assistant using the gold-api-feed MCP skill. Provides real-time market analysis, trade evaluation, and risk assessment.
 

@@ -1,8 +1,8 @@
-# Gold Trading Agent - Project Summary
+# Goldrix - Project Summary
 
 ## What Has Been Built
 
-A local-first gold (XAU/USD) trading agent that connects to MetaTrader 5 on your laptop for Exness demo account trading.
+A local-first gold (XAU/USD) trading dashboard and agent that connects to MetaTrader 5 on your laptop for Exness demo account trading.
 
 ## Architecture Overview
 
@@ -87,7 +87,7 @@ A local-first gold (XAU/USD) trading agent that connects to MetaTrader 5 on your
 
 ### Frontend (`/frontend`)
 
-- **`src/app/page.tsx`**: Updated dashboard
+- **`src/app/page.tsx`**: Goldrix dashboard
   - Polling-based data fetching (5s)
   - MT5 connection status
   - Account info display (balance, equity, margin)

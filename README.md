@@ -1,13 +1,13 @@
-# Gold Trading Agent
+# Goldrix
 
-Local-first gold (XAU/USD) trading agent for Exness + MetaTrader 5.
+Goldrix is the local-first gold (XAU/USD) trading dashboard and agent for Exness + MetaTrader 5.
 
-**NEW**: Includes AI Trading Agent with TradingAgents-inspired multi-agent analysis framework.
+**NEW**: Includes the Goldrix agent with TradingAgents-inspired multi-agent analysis framework.
 
 ## What's Included
 
 1. **Full-Stack Trading Dashboard** - Next.js frontend + FastAPI backend
-2. **AI Trading Agent** - Standalone Python agent using MCP skill
+2. **Goldrix Agent** - Standalone Python agent using MCP skill
 3. **gold-api-feed Skill** - Real-time prices + multi-agent analysis
 4. **Multi-Asset Support** - Trade Gold (XAU/USD) and Bitcoin (BTC/USD)
 5. **Demo Trading Mode** - No MT5 required for testing
@@ -44,7 +44,7 @@ Local-first gold (XAU/USD) trading agent for Exness + MetaTrader 5.
 - **REST API**: Polling-based endpoints for dashboard
 - **Telegram Alerts**: Optional notifications for signals and trades
 
-## AI Trading Agent (Standalone)
+## Goldrix Agent (Standalone)
 
 Use the trading agent without the full stack:
 
@@ -235,7 +235,7 @@ Open `http://localhost:3005` to see:
 
 ```
 gold-trading-agent/
-├── agent/                    # Standalone AI Trading Agent
+├── agent/                    # Standalone Goldrix agent
 │   ├── __init__.py
 │   ├── trading_agent.py      # Main agent class
 │   └── README.md             # Agent documentation
@@ -256,7 +256,7 @@ gold-trading-agent/
 │   │   └── trading_service.py
 │   ├── main.py               # Application entry
 │   └── requirements.txt      # Dependencies
-├── frontend/                 # Next.js dashboard
+├── frontend/                 # Next.js Goldrix dashboard
 │   └── src/
 │       └── app/
 │           └── page.tsx      # Main dashboard

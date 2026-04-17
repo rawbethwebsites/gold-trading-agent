@@ -1,5 +1,5 @@
 """
-Configuration module for Exness + MT5 Trading Agent
+Configuration module for Goldrix
 Loads settings from environment with safe defaults
 """
 

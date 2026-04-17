@@ -1,4 +1,4 @@
-# Gold Trading Agent - Setup Guide
+# Goldrix - Setup Guide
 
 ## Step-by-Step Setup Instructions
 
@@ -156,7 +156,7 @@ python main.py
 
 You should see:
 ```
-Gold Trading Agent - Starting up
+Goldrix - Starting up
 Trading enabled: False
 Demo trades: False
 Account type: demo

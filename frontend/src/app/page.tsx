@@ -15,7 +15,7 @@ import {
 } from 'recharts'
 import { Activity, Bell, AlertTriangle, ChevronDown, ChevronUp, Settings } from 'lucide-react'
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'https://hitlers-macbook-pro.taild1f244.ts.net/api'
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || '/api'
 const POLLING_INTERVAL = 5000 // 5 seconds
 
 interface DashboardData {
@@ -465,7 +465,7 @@ export default function GoldTradingDashboard() {
       }
       setError(null)
     } catch (err) {
-      setError('Cannot connect to backend. Is it running on port 8000?')
+      setError(`Cannot connect to backend at ${API_BASE}. Check NEXT_PUBLIC_API_URL or the backend service.`)
     } finally {
       if (loading) setLoading(false)
     }
@@ -1014,7 +1014,7 @@ export default function GoldTradingDashboard() {
         {/* Right Column: Account Status & Utilities */}
         <div style={{display: 'flex', flexDirection: 'column', gap: '20px'}}>
 
-           {/* AI Trading Intelligence Panel - Main Trading Agent Interface */}
+           {/* AI Trading Intelligence Panel - Main Goldrix Interface */}
            <div className="panel" style={{borderColor: 'rgba(240,195,107,0.3)'}}>
               <div className="panel-head" style={{background: 'linear-gradient(90deg, rgba(240,195,107,0.05), transparent)'}}>
                  <div style={{display: 'flex', alignItems: 'center', gap: '12px'}}>
@@ -1027,8 +1027,8 @@ export default function GoldTradingDashboard() {
                        animation: 'pulse 2s infinite'
                      }}></div>
                      <div>
-                       <h2 style={{color: '#f0c36b'}}>🤖 Trading Agent</h2>
-                       <p>Your personal trading assistant - Ask me anything</p>
+                       <h2 style={{color: '#f0c36b'}}>🤖 Goldrix</h2>
+                       <p>Your personal gold-market assistant - Ask me anything</p>
                      </div>
                  </div>
               </div>
@@ -1083,10 +1083,10 @@ export default function GoldTradingDashboard() {
                          <div style={{textAlign: 'center', padding: '24px', color: 'var(--muted)', fontSize: '13px'}}>
                            <div style={{marginBottom: '12px', fontSize: '24px'}}>👋</div>
                            <div style={{fontWeight: 600, color: 'var(--text)', marginBottom: '8px'}}>
-                             Welcome to your Trading Agent
+                             Welcome to Goldrix
                            </div>
                            <div style={{lineHeight: '1.6'}}>
-                             I have real-time access to your dashboard data.<br/>
+                             I have real-time access to your Goldrix dashboard data.<br/>
                              Ask me anything about trades, signals, or market analysis.
                            </div>
                            <div style={{marginTop: '16px', display: 'flex', flexWrap: 'wrap', gap: '8px', justifyContent: 'center'}}>

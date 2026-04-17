@@ -1,5 +1,5 @@
 """
-REST API Routes for Trading Agent
+REST API routes for Goldrix
 Provides polling endpoints for dashboard data
 """
 
@@ -497,7 +497,7 @@ import json
 import os
 
 # Try to find claude CLI path
-CLAUDE_CLI_PATHS = [
+AGENT_CLI_PATHS = [
     "/Users/hitler/.local/bin/claude",
     "/usr/local/bin/claude",
     "claude",
@@ -506,7 +506,7 @@ CLAUDE_CLI_PATHS = [
 @router.post("/chat")
 async def chat_with_agent(request: ChatRequest):
     """
-    Chat with Claude CLI as the trading agent
+    Chat with the Goldrix agent CLI
     """
     import logging
     logger = logging.getLogger(__name__)
@@ -518,8 +518,8 @@ async def chat_with_agent(request: ChatRequest):
         ctx = request.context
         user_message = request.message
 
-        # Build system prompt with trading context
-        system_prompt = f"""You are Claude, a professional trading analysis agent embedded in a live trading dashboard.
+        # Build system prompt with live trading context
+        system_prompt = f"""You are Goldrix, a professional gold-market analysis agent embedded in a live trading dashboard.
 
 LIVE MARKET DATA:
 - Asset: {ctx.get('assetName', 'Unknown')} ({ctx.get('asset', 'Unknown')})
@@ -531,57 +531,57 @@ LIVE MARKET DATA:
 
 Answer concisely using the live data. Keep under 4 sentences. Bold important numbers with **.**"""
 
-        # Build conversation for Claude
-        conversation = f"{system_prompt}\n\nUser: {user_message}\n\nClaude:"
+        # Build conversation for Goldrix
+        conversation = f"{system_prompt}\n\nUser: {user_message}\n\nGoldrix:"
 
-        # Try to find and call Claude CLI
-        claude_path = None
-        for path in CLAUDE_CLI_PATHS:
+        # Try to find and call the agent CLI
+        agent_path = None
+        for path in AGENT_CLI_PATHS:
             if path == "claude":
                 result = subprocess.run(["which", "claude"], capture_output=True, text=True)
                 if result.returncode == 0:
-                    claude_path = result.stdout.strip()
+                    agent_path = result.stdout.strip()
                     break
             elif os.path.exists(path):
-                claude_path = path
+                agent_path = path
                 break
 
-        print(f"[CHAT] Claude CLI path: {claude_path}", flush=True)
+        print(f"[CHAT] Goldrix CLI path: {agent_path}", flush=True)
 
-        if claude_path:
+        if agent_path:
             try:
-                print(f"[CHAT] Calling Claude CLI subprocess...", flush=True)
+                print(f"[CHAT] Calling Goldrix CLI subprocess...", flush=True)
 
-                # Call Claude with the prompt
+                # Call the agent CLI with the prompt
                 proc = subprocess.run(
-                    [claude_path, "-p", conversation],
+                    [agent_path, "-p", conversation],
                     capture_output=True,
                     text=True,
                     timeout=30,
                     cwd="/Users/hitler/Projects/gold-trading-agent"
                 )
 
-                print(f"[CHAT] Claude CLI return code: {proc.returncode}", flush=True)
+                print(f"[CHAT] Goldrix CLI return code: {proc.returncode}", flush=True)
 
                 if proc.returncode == 0 and proc.stdout.strip():
                     response_text = proc.stdout.strip()
-                    print(f"[CHAT] Claude response: {response_text[:100]}...", flush=True)
+                    print(f"[CHAT] Goldrix response: {response_text[:100]}...", flush=True)
 
                     return {
                         "success": True,
                         "response": response_text,
-                        "source": "claude_cli"
+                        "source": "goldrix_cli"
                     }
                 else:
-                    print(f"[CHAT] Claude CLI failed: {proc.stderr}", flush=True)
-                    raise Exception(f"Claude error: {proc.stderr[:200]}")
+                    print(f"[CHAT] Goldrix CLI failed: {proc.stderr}", flush=True)
+                    raise Exception(f"Goldrix error: {proc.stderr[:200]}")
 
             except Exception as e:
-                print(f"[CHAT] Claude CLI exception: {e}", flush=True)
+                print(f"[CHAT] Goldrix CLI exception: {e}", flush=True)
                 raise
         else:
-            print("[CHAT] Claude CLI not found - using fallback", flush=True)
-            raise Exception("Claude CLI not found")
+            print("[CHAT] Goldrix CLI not found - using fallback", flush=True)
+            raise Exception("Goldrix CLI not found")
 
     except Exception as e:
         # FALLBACK to rule-based
@@ -601,6 +601,6 @@ Answer concisely using the live data. Keep under 4 sentences. Bold important num
         return {
             "success": True,
             "response": response,
-            "source": "fallback",
+            "source": "goldrix_fallback",
             "error": str(e)
         }

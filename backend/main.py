@@ -1,5 +1,5 @@
 """
-Gold Trading Agent - Backend (MT5 + Exness)
+Goldrix Dashboard Backend (MT5 + Exness)
 Local-first architecture with polling REST API
 """
 
@@ -71,7 +71,7 @@ async def lifespan(app: FastAPI):
     global trading_service
 
     logger.info("=" * 60)
-    logger.info("Gold Trading Agent - Starting up")
+    logger.info("Goldrix Dashboard - Starting up")
     logger.info("=" * 60)
 
     # Log safety configuration
@@ -113,8 +113,8 @@ async def lifespan(app: FastAPI):
 
 # Create FastAPI app
 app = FastAPI(
-    title="Gold Trading Agent API",
-    description="Local-first MT5 + Exness trading agent",
+    title="Goldrix Dashboard API",
+    description="Local-first MT5 + Exness trading dashboard",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -136,7 +136,7 @@ app.include_router(routes.router, prefix="/api")
 async def root():
     """Root endpoint - system info"""
     return {
-        "name": "Gold Trading Agent",
+        "name": "Goldrix",
         "version": "1.0.0",
         "architecture": "Local-first MT5 + Exness",
         "data_provider": config.app.data_provider,

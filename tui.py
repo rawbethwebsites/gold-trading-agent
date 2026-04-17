@@ -1,5 +1,5 @@
 """
-Gold Trading Agent - Terminal UI
+Goldrix - Terminal UI
 Run: python tui.py [--port 8000]
 Connects to the backend API and displays live trading data.
 """
@@ -242,9 +242,9 @@ class StatusBar(Static):
 # ─── main app ────────────────────────────────────────────────────────────────
 
 class GoldTradingTUI(App):
-    """Gold Trading Agent — Terminal UI"""
+    """Goldrix — Terminal UI"""
 
-    TITLE = "Gold Trading Agent"
+    TITLE = "Goldrix"
     SUB_TITLE = "XAUUSD Live Dashboard"
 
     CSS = """
@@ -413,7 +413,7 @@ class GoldTradingTUI(App):
 # ─── entry point ─────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="Gold Trading Agent TUI")
+    parser = argparse.ArgumentParser(description="Goldrix TUI")
     parser.add_argument("--port", type=int, default=8000, help="Backend port (default: 8000)")
     parser.add_argument("--host", default="localhost", help="Backend host (default: localhost)")
     args = parser.parse_args()

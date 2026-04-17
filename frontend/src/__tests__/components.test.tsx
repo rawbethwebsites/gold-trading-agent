@@ -8,7 +8,7 @@ import '@testing-library/jest-dom'
 const MockDashboard = () => {
   return (
     <div>
-      <h1>Gold Trading Agent</h1>
+      <h1>Goldrix</h1>
       <div data-testid="price-display">4821.00</div>
       <button data-testid="buy-button">Buy</button>
       <button data-testid="sell-button">Sell</button>
@@ -19,7 +19,7 @@ const MockDashboard = () => {
 describe('Dashboard Components', () => {
   test('renders dashboard title', () => {
     render(<MockDashboard />)
-    expect(screen.getByText('Gold Trading Agent')).toBeInTheDocument()
+    expect(screen.getByText('Goldrix')).toBeInTheDocument()
   })
 
   test('displays price', () => {

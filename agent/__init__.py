@@ -1,5 +1,5 @@
 """
-Gold Trading Agent Package
+Goldrix Package
 
 Provides AI-powered trading analysis using the gold-api-feed MCP skill.
 
@@ -28,5 +28,5 @@ Usage:
 
 from .trading_agent import TradingAgent
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 __all__ = ["TradingAgent"]

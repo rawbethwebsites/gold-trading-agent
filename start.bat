@@ -1,9 +1,9 @@
 @echo off
-REM Gold Trading Agent - Windows Startup Script
-REM Exness + MT5 Local-First Trading Agent
+REM Goldrix - Windows Startup Script
+REM Exness + MT5 Local-First Dashboard
 
 echo ============================================
-echo  Gold Trading Agent - Windows
+echo  Goldrix - Windows
 echo  Exness + MT5 Local-First
 echo ============================================
 echo.
@@ -90,7 +90,7 @@ TIMEOUT /T 3 /NOBREAK >nul
 
 echo.
 echo ============================================
-echo  Gold Trading Agent is running!
+echo  Goldrix is running!
 echo ============================================
 echo.
 echo   Dashboard:  http://localhost:3005

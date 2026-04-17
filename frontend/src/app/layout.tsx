@@ -16,8 +16,8 @@ const ibmPlexMono = IBM_Plex_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'Gold Trading Agent',
-  description: 'Real-time XAU/USD analysis with technical indicators',
+  title: 'Goldrix',
+  description: 'Goldrix dashboard for real-time XAU/USD analysis and trading intelligence',
 }
 
 export default function RootLayout({
